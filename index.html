@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Lupus in Fabula - Home</title>
+</head>
+<body>
+  <h1>🧙 Lupus in Fabula</h1>
+  <button id="newGame">Nuova partita</button>
+  <button id="joinGame">Unisciti a partita</button>
+
+  <script type="module">
+    import { db } from "assets/js/firebase.js";
+    import { ref, set, push } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
+
+    // Nuova partita
+    document.getElementById("newGame").addEventListener("click", () => {
+      const gamesRef = ref(db, "games");
+      const newGameRef = push(gamesRef);
+
+      // Codice random a 5 caratteri
+      const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+
+      set(newGameRef, {
+        code: code,
+        host: "Narratore",
+        players: ["Narratore"]
+      });
+
+      console.log("✅ Nuova partita creata con codice:", code);
+      window.location.href = `lobby.html?gameId=${newGameRef.key}`;
+    });
+
+    // Join partita (per ora manda alla lobby senza chiedere codice)
+    document.getElementById("joinGame").addEventListener("click", () => {
+      alert("🚧 Qui chiederemo il codice partita");
+    });
+  </script>
+</body>
+</html>

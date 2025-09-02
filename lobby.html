@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Lupus in Fabula - Lobby</title>
+</head>
+<body>
+  <h1>👥 Lobby</h1>
+  <div id="players"></div>
+  <button onclick="window.location.href='game.html'">Inizia partita</button>
+
+  <script type="module">
+    import { db } from "assets/js/firebase.js";
+    import { ref, onValue } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
+
+    // Prendi gameId dall’URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const gameId = urlParams.get("gameId");
+
+    if (!gameId) {
+      document.body.innerHTML = "<h2>❌ Nessuna partita trovata</h2>";
+    } else {
+      const playersDiv = document.getElementById("players");
+      const gameRef = ref(db, `games/${gameId}`);
+
+      onValue(gameRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data && data.players) {
+          playersDiv.innerHTML = "<ul>" + data.players.map(p => `<li>${p}</li>`).join("") + "</ul>";
+        }
+      });
+    }
+  </script>
+</body>
+</html>
