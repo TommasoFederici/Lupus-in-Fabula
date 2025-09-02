@@ -6,30 +6,16 @@
 </head>
 <body>
   <h1>👥 Lobby</h1>
-  <div id="players"></div>
-  <button onclick="window.location.href='game.html'">Inizia partita</button>
 
-  <script type="module">
-    import { db } from "assets/js/firebase.js";
-    import { ref, onValue } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
+  <div>
+    <strong>Codice partita:</strong> <span id="game-code"></span>
+  </div>
 
-    // Prendi gameId dall’URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const gameId = urlParams.get("gameId");
+  <h2>Giocatori connessi:</h2>
+  <ul id="players-list"></ul>
 
-    if (!gameId) {
-      document.body.innerHTML = "<h2>❌ Nessuna partita trovata</h2>";
-    } else {
-      const playersDiv = document.getElementById("players");
-      const gameRef = ref(db, `games/${gameId}`);
+  <button id="start-game">Inizia Partita</button>
 
-      onValue(gameRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data && data.players) {
-          playersDiv.innerHTML = "<ul>" + data.players.map(p => `<li>${p}</li>`).join("") + "</ul>";
-        }
-      });
-    }
-  </script>
+  <script type="module" src="./assets/js/lobby.js"></script>
 </body>
 </html>
