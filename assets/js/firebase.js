@@ -1,10 +1,8 @@
-// firebase.js
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-analytics.js";
-import { getDatabase } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+// Import SDK da Firebase (moduli ufficiali)
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getDatabase } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
-// Configurazione (la tua)
+// La tua configurazione
 const firebaseConfig = {
   apiKey: "AIzaSyA18O_8XvZ9hUBHGfCnaefUBemc5NNT4gc",
   authDomain: "lupus-in-fabula-1f963.firebaseapp.com",
@@ -18,11 +16,7 @@ const firebaseConfig = {
 
 // Inizializza Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-export const db = getDatabase(app);
-export const auth = getAuth(app);
+const db = getDatabase(app);
 
-// Login anonimo (semplice per ora)
-signInAnonymously(auth)
-  .then(() => console.log("✅ Accesso anonimo a Firebase"))
-  .catch((err) => console.error("❌ Errore login anonimo:", err));
+// Esporta
+export { app, db };
