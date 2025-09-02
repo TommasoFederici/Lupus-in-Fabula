@@ -4,11 +4,13 @@ import { ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/11.0.
 const urlParams = new URLSearchParams(window.location.search);
 const gameCode = urlParams.get("gameCode");
 
-const playersListSnapshot = {}; // manterremo l'oggetto giocatori
-
 const gameCodeSpan = document.getElementById("game-code");
 const playersList = document.getElementById("players-list");
 const startButton = document.getElementById("start-game");
+
+let playersListSnapshot = {}; // oggetto giocatori
+let roles = []; // array dei ruoli disponibili
+let isHost = false;
 
 if (!gameCode) {
   alert("❌ Nessuna partita specificata");
@@ -29,25 +31,25 @@ if (!gameCode) {
     });
   });
 
-  // --- Controllo host / guest ---
-  let isHost = false;
+  // --- Controllo host / guest e caricamento ruoli ---
   onValue(gameRef, async (snapshot) => {
     const data = snapshot.val();
     isHost = data.host === auth.currentUser.uid;
     startButton.disabled = !isHost;
 
-    // Carica ruoli dal DB o dal JSON solo la prima volta
+    // Carica ruoli solo la prima volta
     if (!document.getElementById("roles-container")) {
       await loadRoles(isHost);
     }
   });
 
+  // --- Bottone Avvia Partita ---
   startButton.addEventListener("click", async () => {
     if (!isHost) return;
 
     const countsEls = document.querySelectorAll(".count");
     const totalRoles = Array.from(countsEls).reduce((sum, el) => sum + parseInt(el.textContent), 0);
-    const numPlayers = Object.keys(playersListSnapshot).length - 1;
+    const numPlayers = Object.keys(playersListSnapshot).length - 1; // escluso host
 
     if (totalRoles !== numPlayers) {
       alert(`❌ Il numero totale di ruoli (${totalRoles}) non corrisponde ai giocatori (${numPlayers})`);
@@ -63,44 +65,52 @@ if (!gameCode) {
 
     await set(ref(db, `games/${gameCode}/rolesSelected`), rolesSelected);
     alert("🚀 Partita avviata!");
-    // Qui poi si reindirizza i giocatori alla schermata di gioco
+    // Qui poi si reindirizza tutti i giocatori alla schermata di gioco
   });
 }
 
 // --- Funzione per caricare ruoli e creare il pannello ---
 async function loadRoles(isHost) {
-  const response = await fetch("./assets/data/roles.json");
-  roles = await response.json();
+  try {
+    const response = await fetch("./assets/data/roles.json");
+    if (!response.ok) throw new Error("Impossibile caricare roles.json");
+    roles = await response.json();
 
-  const rolesContainer = document.createElement("div");
-  rolesContainer.id = "roles-container";
-  rolesContainer.innerHTML = "<h2>Impostazioni Ruoli</h2>";
-  document.body.appendChild(rolesContainer);
+    const rolesContainer = document.createElement("div");
+    rolesContainer.id = "roles-container";
+    rolesContainer.innerHTML = "<h2>Impostazioni Ruoli</h2>";
+    document.body.appendChild(rolesContainer);
 
-  roles.forEach((role, index) => {
-    const div = document.createElement("div");
-    div.innerHTML = `
-      <strong>${role.name}</strong> - <span title="${role.description}">ℹ️</span>
-      ${isHost ? `<button class="minus" data-index="${index}">-</button>` : ""}
-      <span class="count" data-index="${index}">${role.defaultCount}</span>
-      ${isHost ? `<button class="plus" data-index="${index}">+</button>` : ""}
-    `;
-    rolesContainer.appendChild(div);
-  });
-
-  if (isHost) {
-    rolesContainer.addEventListener("click", (e) => {
-      if (!e.target.dataset.index) return;
-      const i = e.target.dataset.index;
-      const countEl = rolesContainer.querySelector(`.count[data-index='${i}']`);
-      let count = parseInt(countEl.textContent);
-
-      if (e.target.classList.contains("plus")) {
-        count++;
-      } else if (e.target.classList.contains("minus") && count > 0) {
-        count--;
-      }
-      countEl.textContent = count;
+    roles.forEach((role, index) => {
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <strong>${role.name}</strong> - <span title="${role.description}">ℹ️</span>
+        ${isHost ? `<button class="minus" data-index="${index}">-</button>` : ""}
+        <span class="count" data-index="${index}">${role.defaultCount}</span>
+        ${isHost ? `<button class="plus" data-index="${index}">+</button>` : ""}
+      `;
+      rolesContainer.appendChild(div);
     });
+
+    // Gestione click + / - solo host
+    if (isHost) {
+      rolesContainer.addEventListener("click", (e) => {
+        if (!e.target.dataset.index) return;
+        const i = e.target.dataset.index;
+        const countEl = rolesContainer.querySelector(`.count[data-index='${i}']`);
+        let count = parseInt(countEl.textContent);
+
+        if (e.target.classList.contains("plus")) {
+          count++;
+        } else if (e.target.classList.contains("minus") && count > 0) {
+          count--;
+        }
+        countEl.textContent = count;
+      });
+    }
+
+  } catch (err) {
+    console.error(err);
+    alert("❌ Errore nel caricamento dei ruoli");
   }
 }
