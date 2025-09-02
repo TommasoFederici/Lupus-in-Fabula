@@ -1,0 +1,14 @@
+[
+  { "name": "Lupo", "description": "I lupi indicano un giocatore da eliminare durante la notte", "defaultCount": 1 },
+  { "name": "Veggente", "description": "Il veggente indica un giocatore durante la notte, se questo è lupo il narratore gli risponderà di sì.", "defaultCount": 1 },
+  { "name": "Puttana", "description": "Può salvare un giocatore durante la notte. Non può salvare lo stesso giocatore due volte di fila, può salvare anche se stessa", "defaultCount": 1 },
+  { "name": "Amante", "description": "Durante la notte gli amanti possono dormire a casa di uno degli amanti o tutti separati, i lupi uccidono tutti quelli che sono in casa della loro vittima.", "defaultCount": 0 },
+  { "name": "Folle", "description": "Vince se viene eliminato di giorno", "defaultCount": 0 },
+  { "name": "Kamikaze", "description": "Quando muore, elimina un altro giocatore tra quelli che lo hanno votato.", "defaultCount": 0 },
+  { "name": "Contadino", "description": "Non ha poteri speciali, la notte dorme come un pupo.", "defaultCount": 0 },
+  { "name": "Mitomane", "description": "Durante la prima notte indica un giocatore e ne copia il ruolo.", "defaultCount": 0 },
+  { "name": "Figlio del Lupo", "description": "Gioca da contadino fintanto che è in vita, se viene ucciso dai lupi durante la notte si risveglia lupo.", "defaultCount": 0 },
+  { "name": "Lupo Sciamano", "description": "Durante la notte indica un altro giocatore, per quel turno quel giocatore viene visto come lupo dal veggente.", "defaultCount": 0 },
+  { "name": "Muto", "description": "Indica un altro giocatore durante la notte, questo non potrà parlare nel successivo giorno. Non può scegliere la stessa persona due volte di fila.", "defaultCount": 0 },
+  { "name": "Investigatore", "description": "Durante la notte indica un giocatore, se questo è un ruolo che esce di notte il narratore gli dirà sì. [N.B. i ruoli che escono sono: Lupo, Puttana (se salva qualcuno), Mitomane (la prima notte), Amante (se dorme da qualcuno)]", "defaultCount": 0 }
+]
