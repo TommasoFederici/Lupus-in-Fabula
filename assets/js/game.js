@@ -74,7 +74,11 @@ async function renderNarratorTable(phase, gameData) {
   container.innerHTML = "";
 
   const players = gameData.players || {};
-  const activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
+  let activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
+  if (phase === "night") {
+    // rimuove i giocatori morti dalla view di notte
+    activePlayers = activePlayers.filter(([uid, p]) => p.isAlive);
+  }
 
   const roles = Object.keys(gameData.roles || {}).filter(r => gameData.roles[r].count > 0);
 
@@ -217,3 +221,12 @@ async function processNightResults() {
   // Pulizia azioni notte
   await update(ref(db, `games/${gameCode}/nightActions`), {});
 }
+
+document.getElementById("end-game-btn").addEventListener("click", async () => {
+  // Aggiorna lo stato della partita
+  await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
+
+  // Riporta tutti alla lobby
+  window.location.href = `lobby.html?gameCode=${gameCode}`;
+});
+
