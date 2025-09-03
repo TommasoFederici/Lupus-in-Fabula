@@ -45,22 +45,22 @@ async function setupNarrator() {
   document.getElementById("narrator-view").style.display = "block";
   const togglePhaseBtn = document.getElementById("toggle-phase-btn");
 
-  // 🔄 Ascolta cambiamenti di stato e di giocatori → aggiorna tabella in tempo reale
-  onValue(ref(db, `games/${gameCode}/state`), async (snap) => {
-    const state = snap.val();
-    const phase = state?.phase || "night";
+  // 🔄 Ascolta sia players che state
+  const stateRef = ref(db, `games/${gameCode}/state`);
+  const playersRef = ref(db, `games/${gameCode}/players`);
+
+  const updateTable = async () => {
+    const [stateSnap, playersSnap] = await Promise.all([get(stateRef), get(playersRef)]);
+    const phase = stateSnap.exists() ? stateSnap.val().phase : "night";
     togglePhaseBtn.textContent = phase === "night" ? "Passa al giorno" : "Passa alla notte";
     await renderNarratorTable(phase);
-  });
+  };
 
-  onValue(ref(db, `games/${gameCode}/players`), async () => {
-    const snap = await get(ref(db, `games/${gameCode}/state`));
-    const phase = snap.exists() ? snap.val().phase : "night";
-    await renderNarratorTable(phase);
-  });
+  onValue(stateRef, updateTable);
+  onValue(playersRef, updateTable);
 
   togglePhaseBtn.addEventListener("click", async () => {
-    const snap = await get(ref(db, `games/${gameCode}/state`));
+    const snap = await get(stateRef);
     const phase = snap.val()?.phase || "night";
     const newPhase = phase === "night" ? "day" : "night";
 
@@ -70,7 +70,7 @@ async function setupNarrator() {
 
     // Reset muto a inizio giorno
     if (newPhase === "day") {
-      const playersSnap = await get(ref(db, `games/${gameCode}/players`));
+      const playersSnap = await get(playersRef);
       const players = playersSnap.val();
       for (let uid in players) {
         await update(ref(db, `games/${gameCode}/players/${uid}`), { isMuted: false });
@@ -82,9 +82,10 @@ async function setupNarrator() {
       }
     }
 
-    await update(ref(db, `games/${gameCode}/state`), { phase: newPhase });
+    await update(stateRef, { phase: newPhase });
   });
 }
+
 
 // ==================================================
 // 🔹 RENDER TABELLONE NARRATORE
