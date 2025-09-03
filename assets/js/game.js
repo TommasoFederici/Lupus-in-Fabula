@@ -86,7 +86,6 @@ async function setupNarrator() {
   });
 }
 
-
 // ==================================================
 // 🔹 RENDER TABELLONE NARRATORE
 async function renderNarratorTable(phase) {
