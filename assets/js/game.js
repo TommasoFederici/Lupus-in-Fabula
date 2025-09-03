@@ -20,6 +20,14 @@ auth.onAuthStateChanged(async (user) => {
   currentPlayerData = snap.val();
   isHost = currentPlayerData.role === "host";
 
+  // Listener globale per fine partita (redirect lobby)
+  onValue(ref(db, `games/${gameCode}/state`), (snap) => {
+    const state = snap.val();
+    if (state?.status === "ended") {
+      window.location.href = `lobby.html?gameCode=${gameCode}`;
+    }
+  });
+
   if (isHost) setupNarrator();
   else setupPlayer();
 });
@@ -75,13 +83,13 @@ async function renderNarratorTable(phase, gameData) {
 
   const players = gameData.players || {};
   let activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
+
   if (phase === "night") {
     // rimuove i giocatori morti dalla view di notte
     activePlayers = activePlayers.filter(([uid, p]) => p.isAlive);
   }
 
   const roles = Object.keys(gameData.roles || {}).filter(r => gameData.roles[r].count > 0);
-
   const nightNumber = gameData.state?.nightNumber || 1;
 
   activePlayers.forEach(([uid, p]) => {
@@ -115,7 +123,7 @@ async function renderNarratorTable(phase, gameData) {
         li.append(" | Salvato ", chk);
       }
 
-      // Casella Amanti
+      // Casella Amanti (solo se il player è Amante)
       if (roles.includes("Amante") && p.gameRole === "Amante") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
@@ -222,11 +230,8 @@ async function processNightResults() {
   await update(ref(db, `games/${gameCode}/nightActions`), {});
 }
 
+// ==================================================
+// 🔹 TERMINA PARTITA
 document.getElementById("end-game-btn").addEventListener("click", async () => {
-  // Aggiorna lo stato della partita
   await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
-
-  // Riporta tutti alla lobby
-  window.location.href = `lobby.html?gameCode=${gameCode}`;
 });
-
