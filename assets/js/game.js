@@ -20,14 +20,6 @@ auth.onAuthStateChanged(async (user) => {
   currentPlayerData = snap.val();
   isHost = currentPlayerData.role === "host";
 
-  // Listener globale per fine partita (redirect lobby)
-  onValue(ref(db, `games/${gameCode}/state`), (snap) => {
-    const state = snap.val();
-    if (state?.status === "ended") {
-      window.location.href = `lobby.html?gameCode=${gameCode}`;
-    }
-  });
-
   if (isHost) setupNarrator();
   else setupPlayer();
 });
@@ -45,6 +37,13 @@ function setupPlayer() {
     revealed = !revealed;
     roleCard.textContent = revealed ? `Ruolo: ${currentPlayerData.gameRole}` : "Ruolo: ???";
   });
+
+  // Aggiorna automaticamente la pagina se la partita termina
+  onValue(ref(db, `games/${gameCode}/state/status`), (snap) => {
+    if (snap.val() === "ended") {
+      window.location.href = `lobby.html?gameCode=${gameCode}`;
+    }
+  });
 }
 
 // ==================================================
@@ -53,7 +52,7 @@ async function setupNarrator() {
   document.getElementById("narrator-view").style.display = "block";
   const togglePhaseBtn = document.getElementById("toggle-phase-btn");
 
-  // Ascolta DB in tempo reale
+  // Aggiornamento in tempo reale
   onValue(gameRef, async (snap) => {
     const gameData = snap.val();
     if (!gameData) return;
@@ -69,7 +68,7 @@ async function setupNarrator() {
     const phase = snap.val()?.phase || "night";
     const newPhase = phase === "night" ? "day" : "night";
 
-    if (phase === "night") await processNightResults(); // aggiorna stato giocatori
+    if (phase === "night") await processNightResults();
 
     await update(ref(db, `games/${gameCode}/state`), { phase: newPhase });
   });
@@ -83,11 +82,7 @@ async function renderNarratorTable(phase, gameData) {
 
   const players = gameData.players || {};
   let activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
-
-  if (phase === "night") {
-    // rimuove i giocatori morti dalla view di notte
-    activePlayers = activePlayers.filter(([uid, p]) => p.isAlive);
-  }
+  if (phase === "night") activePlayers = activePlayers.filter(([uid, p]) => p.isAlive);
 
   const roles = Object.keys(gameData.roles || {}).filter(r => gameData.roles[r].count > 0);
   const nightNumber = gameData.state?.nightNumber || 1;
@@ -97,7 +92,7 @@ async function renderNarratorTable(phase, gameData) {
     li.textContent = `${p.name} (${p.gameRole})`;
 
     if (phase === "night") {
-      // Casella Ucciso (tutti tranne Lupi)
+      // Ucciso (tranne Lupi)
       if (roles.includes("Lupo") && p.gameRole !== "Lupo") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
@@ -111,7 +106,7 @@ async function renderNarratorTable(phase, gameData) {
         li.append(" | Ucciso ", chk);
       }
 
-      // Casella Salvato (solo se c'è la Puttana)
+      // Salvato (Puttana)
       if (roles.includes("Puttana")) {
         const chk = document.createElement("input");
         chk.type = "radio";
@@ -123,7 +118,7 @@ async function renderNarratorTable(phase, gameData) {
         li.append(" | Salvato ", chk);
       }
 
-      // Casella Amanti (solo se il player è Amante)
+      // Amanti
       if (roles.includes("Amante") && p.gameRole === "Amante") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
@@ -137,7 +132,7 @@ async function renderNarratorTable(phase, gameData) {
         li.append(" | Amante ", chk);
       }
 
-      // Casella Muto
+      // Muto
       if (roles.includes("Muto") && p.gameRole !== "Muto") {
         const chk = document.createElement("input");
         chk.type = "radio";
@@ -165,7 +160,7 @@ async function renderNarratorTable(phase, gameData) {
         li.append(" | Nuovo ruolo: ", select);
       }
     } else {
-      // Giorno: stato vivo/morto + tasto elimina/resuscita
+      // Giorno: stato + elimina/resuscita
       const stateSpan = document.createElement("span");
       stateSpan.textContent = ` | Stato: ${p.isAlive ? "Vivo" : "Morto"}`;
       li.append(stateSpan);
@@ -233,17 +228,19 @@ async function processNightResults() {
 // ==================================================
 // 🔹 TERMINA PARTITA
 document.getElementById("end-game-btn").addEventListener("click", async () => {
-  // 1️⃣ Prendi tutti i giocatori
   const playersSnap = await get(ref(db, `games/${gameCode}/players`));
-  const players = playersSnap.exists() ? playersSnap.val() : {};
+  const players = playersSnap.val();
 
-  // 2️⃣ Imposta tutti i giocatori non-host come isAlive: true
+  // Riporta tutti i giocatori a vivo, mantiene l'host
   for (let uid in players) {
     if (players[uid].role !== "host") {
       await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: true });
     }
   }
 
-  // 3️⃣ Aggiorna lo stato della partita a "ended"
+  // Pulizia azioni notte
+  await update(ref(db, `games/${gameCode}/nightActions`), {});
+
+  // Aggiorna lo stato partita
   await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
 });
