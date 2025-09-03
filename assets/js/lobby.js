@@ -27,7 +27,7 @@ auth.onAuthStateChanged(async (user) => {
 
 async function setupLobby() {
   // 🔹 Ascolta i dati della partita
-  onValue(gameRef, (snapshot) => {
+  onValue(gameRef, async (snapshot) => {
     const gameData = snapshot.val();
     if (!gameData) return;
 
@@ -41,25 +41,26 @@ async function setupLobby() {
     // Mostra giocatori
     renderPlayers(gameData.players || {}, gameData.host);
 
-    // Mostra ruoli (se sono già nel DB)
+    // Mostra ruoli
     renderRoles(gameData.roles || {});
+
+    // 🔹 Carica ruoli dal JSON (serve qui perché ora sappiamo se sei host)
+    await loadRoles();
+
+    // Mostra bottone avvia partita solo all’host
+    const startBtn = document.getElementById("start-game-btn");
+    if (isHost && startBtn) {
+      startBtn.style.display = "block";
+      startBtn.onclick = startGame;
+    } else if (startBtn) {
+      startBtn.style.display = "none";
+    }
 
     // Redirect automatico se il gioco è iniziato
     if (gameData.state?.status === "running") {
       window.location.href = `game.html?gameCode=${gameCode}`;
     }
   });
-
-  // 🔹 Carica ruoli dal JSON (solo host li può configurare)
-  await loadRoles();
-
-  if (isHost) {
-    const startBtn = document.getElementById("start-game-btn");
-    if (startBtn) {
-      startBtn.style.display = "block";
-      startBtn.addEventListener("click", startGame);
-    }
-  }
 }
 
 // ==================================================
@@ -109,11 +110,11 @@ async function loadRoles() {
       if (isHost) {
         const minus = document.createElement("button");
         minus.textContent = "-";
-        minus.addEventListener("click", () => updateRole(role.name, -1));
+        minus.onclick = () => updateRole(role.name, -1);
 
         const plus = document.createElement("button");
         plus.textContent = "+";
-        plus.addEventListener("click", () => updateRole(role.name, 1));
+        plus.onclick = () => updateRole(role.name, 1);
 
         wrapper.appendChild(minus);
         wrapper.appendChild(plus);
