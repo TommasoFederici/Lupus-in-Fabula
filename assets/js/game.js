@@ -45,78 +45,53 @@ async function setupNarrator() {
   document.getElementById("narrator-view").style.display = "block";
   const togglePhaseBtn = document.getElementById("toggle-phase-btn");
 
-  // 🔄 Ascolta sia players che state
-  const stateRef = ref(db, `games/${gameCode}/state`);
-  const playersRef = ref(db, `games/${gameCode}/players`);
+  // Ascolta DB in tempo reale
+  onValue(gameRef, async (snap) => {
+    const gameData = snap.val();
+    if (!gameData) return;
 
-  const updateTable = async () => {
-    const [stateSnap, playersSnap] = await Promise.all([get(stateRef), get(playersRef)]);
-    const phase = stateSnap.exists() ? stateSnap.val().phase : "night";
+    const phase = gameData.state?.phase || "night";
     togglePhaseBtn.textContent = phase === "night" ? "Passa al giorno" : "Passa alla notte";
-    await renderNarratorTable(phase);
-  };
 
-  onValue(stateRef, updateTable);
-  onValue(playersRef, updateTable);
+    await renderNarratorTable(phase, gameData);
+  });
 
   togglePhaseBtn.addEventListener("click", async () => {
-    const snap = await get(stateRef);
+    const snap = await get(ref(db, `games/${gameCode}/state`));
     const phase = snap.val()?.phase || "night";
     const newPhase = phase === "night" ? "day" : "night";
 
-    if (phase === "night") {
-      await processNightResults();
-    }
+    if (phase === "night") await processNightResults(); // aggiorna stato giocatori
 
-    // Reset muto a inizio giorno
-    if (newPhase === "day") {
-      const playersSnap = await get(playersRef);
-      const players = playersSnap.val();
-      for (let uid in players) {
-        await update(ref(db, `games/${gameCode}/players/${uid}`), { isMuted: false });
-      }
-      const actionsSnap = await get(ref(db, `games/${gameCode}/nightActions`));
-      if (actionsSnap.exists() && actionsSnap.val().muted) {
-        const mutedUid = actionsSnap.val().muted;
-        await update(ref(db, `games/${gameCode}/players/${mutedUid}`), { isMuted: true });
-      }
-    }
-
-    await update(stateRef, { phase: newPhase });
+    await update(ref(db, `games/${gameCode}/state`), { phase: newPhase });
   });
 }
 
 // ==================================================
 // 🔹 RENDER TABELLONE NARRATORE
-async function renderNarratorTable(phase) {
+async function renderNarratorTable(phase, gameData) {
   const container = document.getElementById("players-narrator");
   container.innerHTML = "";
 
-  const playersSnap = await get(ref(db, `games/${gameCode}/players`));
-  const players = playersSnap.val();
+  const players = gameData.players || {};
   const activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
 
-  const rolesSnap = await get(ref(db, `games/${gameCode}/roles`));
-  const roles = rolesSnap.exists() ? rolesSnap.val() : {};
-  const roleNames = Object.keys(roles).filter(r => roles[r].count > 0);
+  const roles = Object.keys(gameData.roles || {}).filter(r => gameData.roles[r].count > 0);
 
-  // Prima notte → Mitomane
-  const stateSnap = await get(ref(db, `games/${gameCode}/state/nightNumber`));
-  const nightNumber = stateSnap.exists() ? stateSnap.val() : 1;
+  const nightNumber = gameData.state?.nightNumber || 1;
 
   activePlayers.forEach(([uid, p]) => {
     const li = document.createElement("li");
     li.textContent = `${p.name} (${p.gameRole})`;
 
     if (phase === "night") {
-      // Casella Ucciso (tutti tranne i Lupi)
-      if (roleNames.includes("Lupo") && p.gameRole !== "Lupo") {
+      // Casella Ucciso (tutti tranne Lupi)
+      if (roles.includes("Lupo") && p.gameRole !== "Lupo") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
+        chk.checked = (gameData.nightActions?.killed || []).includes(uid);
         chk.addEventListener("change", async () => {
-          const refArr = ref(db, `games/${gameCode}/nightActions/killed`);
-          const snap = await get(refArr);
-          let arr = snap.exists() ? snap.val() : [];
+          let arr = gameData.nightActions?.killed || [];
           arr = arr.filter(id => id !== uid);
           if (chk.checked) arr.push(uid);
           await update(ref(db, `games/${gameCode}/nightActions`), { killed: arr });
@@ -124,25 +99,25 @@ async function renderNarratorTable(phase) {
         li.append(" | Ucciso ", chk);
       }
 
-      // Casella Salvato (se c'è la Puttana)
-      if (roleNames.includes("Puttana")) {
+      // Casella Salvato (solo se c'è la Puttana)
+      if (roles.includes("Puttana")) {
         const chk = document.createElement("input");
         chk.type = "radio";
         chk.name = "puttana";
+        chk.checked = gameData.nightActions?.saved === uid;
         chk.addEventListener("change", async () => {
           await update(ref(db, `games/${gameCode}/nightActions`), { saved: uid });
         });
         li.append(" | Salvato ", chk);
       }
 
-      // Casella Amanti (solo sui giocatori Amante)
-      if (roleNames.includes("Amante") && p.gameRole === "Amante") {
+      // Casella Amanti
+      if (roles.includes("Amante") && p.gameRole === "Amante") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
+        chk.checked = (gameData.nightActions?.lovers || []).includes(uid);
         chk.addEventListener("change", async () => {
-          const refArr = ref(db, `games/${gameCode}/nightActions/lovers`);
-          const snap = await get(refArr);
-          let arr = snap.exists() ? snap.val() : [];
+          let arr = gameData.nightActions?.lovers || [];
           arr = arr.filter(id => id !== uid);
           if (chk.checked) arr.push(uid);
           await update(ref(db, `games/${gameCode}/nightActions`), { lovers: arr });
@@ -150,11 +125,12 @@ async function renderNarratorTable(phase) {
         li.append(" | Amante ", chk);
       }
 
-      // Casella Muto (se c’è il Muto e il player non è Muto)
-      if (roleNames.includes("Muto") && p.gameRole !== "Muto") {
+      // Casella Muto
+      if (roles.includes("Muto") && p.gameRole !== "Muto") {
         const chk = document.createElement("input");
         chk.type = "radio";
         chk.name = "muto";
+        chk.checked = gameData.nightActions?.muted === uid;
         chk.addEventListener("change", async () => {
           await update(ref(db, `games/${gameCode}/nightActions`), { muted: uid });
         });
@@ -164,23 +140,24 @@ async function renderNarratorTable(phase) {
       // Mitomane prima notte
       if (nightNumber === 1 && p.gameRole === "Mitomane") {
         const select = document.createElement("select");
-        roleNames.forEach(rn => {
-          if (rn !== "Mitomane") {
-            const opt = document.createElement("option");
-            opt.value = rn;
-            opt.textContent = rn;
-            select.appendChild(opt);
-          }
+        roles.filter(rn => rn !== "Mitomane").forEach(rn => {
+          const opt = document.createElement("option");
+          opt.value = rn;
+          opt.textContent = rn;
+          if (gameData.nightActions?.mitomaneRole === rn) opt.selected = true;
+          select.appendChild(opt);
         });
         select.addEventListener("change", async () => {
           await update(ref(db, `games/${gameCode}/nightActions`), { mitomaneRole: select.value });
         });
         li.append(" | Nuovo ruolo: ", select);
       }
-
     } else {
-      // Giorno: mostra stato e pulsante elimina/resuscita
-      li.append(` | Stato: ${p.isAlive ? "Vivo" : "Morto"}`);
+      // Giorno: stato vivo/morto + tasto elimina/resuscita
+      const stateSpan = document.createElement("span");
+      stateSpan.textContent = ` | Stato: ${p.isAlive ? "Vivo" : "Morto"}`;
+      li.append(stateSpan);
+
       const btn = document.createElement("button");
       btn.textContent = p.isAlive ? "Elimina" : "Resuscita";
       btn.addEventListener("click", async () => {
@@ -207,7 +184,7 @@ async function processNightResults() {
   const lovers = actions.lovers || [];
   const muted = actions.muted || null;
 
-  // Aggiornamenti
+  // Aggiorna lo stato dei giocatori
   for (let uid of killed) {
     if (uid === saved) continue;
     if (lovers.includes(uid)) {
