@@ -20,8 +20,8 @@ document.getElementById("new-game").addEventListener("click", async () => {
       state: { status: "waiting" },     // stato iniziale
       players: {
         [auth.currentUser.uid]: { 
-          uid: auth.currentUser.uid,    // 👈 aggiunto
-          name: playerName
+          name: playerName,
+          role: "host"
         }
       }
     });
@@ -59,7 +59,10 @@ document.getElementById("join-game").addEventListener("click", async () => {
     const playerRef = ref(db, `games/${gameCode.toUpperCase()}/players/${auth.currentUser.uid}`);
     await set(playerRef, { 
       uid: auth.currentUser.uid,   // 👈 aggiunto
-      name: playerName
+      name: playerName,
+      role: "guest",
+      isAlive: true,
+      gameRole: null
     });
 
     alert("✅ Sei entrato nella partita!");

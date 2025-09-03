@@ -1,117 +1,82 @@
 import { db, auth } from "./firebase.js";
-import { ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { ref, onValue, update, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const gameCode = urlParams.get("gameCode");
-const gameArea = document.getElementById("game-area");
-
-if (!gameCode) {
-  alert("❌ Nessuna partita trovata");
-}
-
 const gameRef = ref(db, `games/${gameCode}`);
 
 let currentUser = null;
+let isHost = false;
+let currentPlayer = null;
 
-auth.onAuthStateChanged((user) => {
-  if (!user) return;
+auth.onAuthStateChanged(async (user) => {
+  if (!user) return console.error("❌ Nessun utente autenticato!");
   currentUser = user;
 
-  onValue(gameRef, (snapshot) => {
-    const gameData = snapshot.val();
-    if (!gameData) return;
+  // Controlla ruolo e mostra la view corretta
+  const snapshot = await get(ref(db, `games/${gameCode}/players/${currentUser.uid}`));
+  if (!snapshot.exists()) return alert("Giocatore non trovato!");
+  currentPlayer = snapshot.val();
+  isHost = currentPlayer.role === "host";
 
-    const isHost = gameData.host === currentUser.uid;
-    renderGame(gameData, isHost);
-  });
+  if (isHost) {
+    document.getElementById("narrator-view").style.display = "block";
+    setupNarrator();
+  } else {
+    document.getElementById("player-view").style.display = "block";
+    setupPlayer();
+  }
 });
 
-function renderGame(gameData, isHost) {
-  gameArea.innerHTML = "";
+// ==================================================
+// 🔹 Player view
+function setupPlayer() {
+  const cardEl = document.getElementById("role-card");
+  const toggleBtn = document.getElementById("toggle-card");
 
-  // --- se narratore ---
-  if (isHost) {
-    const phase = gameData.state?.phase || "night";
+  const showRole = () => {
+    cardEl.textContent = currentPlayer.gameRole || "Non ancora assegnato";
+  };
 
-    const phaseControls = document.createElement("div");
-    phaseControls.innerHTML = `
-      <h2>Controllo Narratore</h2>
-      <p>Fase attuale: <strong>${phase.toUpperCase()}</strong></p>
-      <button id="toggle-phase">Passa a ${phase === "night" ? "Giorno" : "Notte"}</button>
-      <button id="end-game">Termina Partita</button>
-    `;
-    gameArea.appendChild(phaseControls);
+  const hideRole = () => {
+    cardEl.textContent = "Ruolo";
+  };
 
-    document.getElementById("toggle-phase").onclick = () => {
-      update(ref(db, `games/${gameCode}/state`), {
-        phase: phase === "night" ? "day" : "night"
-      });
-    };
+  toggleBtn.addEventListener("click", () => {
+    cardEl.textContent === "Ruolo" ? showRole() : hideRole();
+  });
 
-    document.getElementById("end-game").onclick = () => {
-      const winners = prompt("Chi ha vinto? (lupi/civili/folle)");
-      update(ref(db, `games/${gameCode}/state`), {
-        status: "ended",
-        winners: winners
-      });
-    };
+  showRole();
+}
 
-    // Lista giocatori con ruoli
-    const list = document.createElement("ul");
-    Object.entries(gameData.players).forEach(([uid, player]) => {
+// ==================================================
+// 🔹 Narrator view
+async function setupNarrator() {
+  const playersList = document.getElementById("players-narrator");
+  const dayBtn = document.getElementById("day-btn");
+  const nightBtn = document.getElementById("night-btn");
+  const endBtn = document.getElementById("end-game-btn");
+
+  // Mostra tutti i giocatori con ruoli
+  onValue(ref(db, `games/${gameCode}/players`), (snapshot) => {
+    const players = snapshot.val() || {};
+    playersList.innerHTML = "";
+
+    Object.entries(players).forEach(([uid, p]) => {
       const li = document.createElement("li");
-      li.innerHTML = `
-        ${player.name} - ${player.role} ${player.alive ? "✅" : "☠️"}
-        <button data-uid="${uid}" class="kill-btn">Elimina</button>
-        <button data-uid="${uid}" class="revive-btn">Resuscita</button>
-      `;
-      list.appendChild(li);
+      li.textContent = `${p.name} - Ruolo: ${p.gameRole || "non assegnato"} - Vivo: ${p.isAlive}`;
+      playersList.appendChild(li);
     });
-    gameArea.appendChild(list);
+  });
 
-    gameArea.addEventListener("click", (e) => {
-      if (e.target.classList.contains("kill-btn")) {
-        update(ref(db, `games/${gameCode}/players/${e.target.dataset.uid}`), { alive: false });
-      }
-      if (e.target.classList.contains("revive-btn")) {
-        update(ref(db, `games/${gameCode}/players/${e.target.dataset.uid}`), { alive: true });
-      }
-    });
+  dayBtn.addEventListener("click", () => update(ref(db, `games/${gameCode}/state`), { phase: "day" }));
+  nightBtn.addEventListener("click", () => update(ref(db, `games/${gameCode}/state`), { phase: "night" }));
 
-  } else {
-    // --- se giocatore ---
-    const player = gameData.players[currentUser.uid];
-    if (!player) return;
+  endBtn.addEventListener("click", async () => {
+    // Logica per decidere vincitori → aggiorna il database se vuoi
+    await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
 
-    if (gameData.state?.status === "ended") {
-      gameArea.innerHTML = `
-        <h2>Partita terminata</h2>
-        <p>Vincitori: ${gameData.state.winners}</p>
-        <button onclick="window.location.href='lobby.html?gameCode=${gameCode}'">Torna alla lobby</button>
-      `;
-      return;
-    }
-
-    const card = document.createElement("div");
-    card.innerHTML = `
-      <h2>Carta Giocatore</h2>
-      <div id="card" style="width:200px;height:300px;border:1px solid black;display:flex;align-items:center;justify-content:center;">
-        Coperta
-      </div>
-      <button id="toggle-card">Mostra / Nascondi</button>
-    `;
-    gameArea.appendChild(card);
-
-    let visible = false;
-    document.getElementById("toggle-card").onclick = () => {
-      visible = !visible;
-      document.getElementById("card").textContent = visible ? player.role : "Coperta";
-    };
-
-    // La carta si gira automaticamente all'inizio per 3 secondi
-    document.getElementById("card").textContent = player.role;
-    setTimeout(() => {
-      if (!visible) document.getElementById("card").textContent = "Coperta";
-    }, 3000);
-  }
+    // Torna alla lobby
+    window.location.href = `lobby.html?gameCode=${gameCode}`;
+  });
 }

@@ -1,12 +1,24 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <title>Lupus in Fabula - Gioco</title>
-  <script type="module" src="./assets/js/game.js"></script>
-</head>
 <body>
-  <h1>Partita in corso</h1>
-  <div id="game-area"></div>
+  <div id="game-container">
+    <!-- Player view -->
+    <div id="player-view" style="display:none;">
+      <h2>Il tuo ruolo</h2>
+      <div id="role-card" class="card">Ruolo</div>
+      <button id="toggle-card">Scopri/Nascondi Ruolo</button>
+    </div>
+
+    <!-- Narratore view -->
+    <div id="narrator-view" style="display:none;">
+      <h2>Schermata Narratore</h2>
+      <div>
+        <button id="day-btn">Giorno</button>
+        <button id="night-btn">Notte</button>
+      </div>
+      <h3>Giocatori</h3>
+      <ul id="players-narrator"></ul>
+      <button id="end-game-btn">Termina Partita</button>
+    </div>
+  </div>
+
+  <script type="module" src="assets/js/game.js"></script>
 </body>
-</html>
