@@ -1,116 +1,145 @@
+// assets/js/lobby.js
 import { db, auth } from "./firebase.js";
-import { ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import {
+  ref,
+  onValue,
+  set,
+  update
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const gameCode = urlParams.get("gameCode");
+const gameRef = ref(db, `games/${gameCode}`);
 
-const gameCodeSpan = document.getElementById("game-code");
-const playersList = document.getElementById("players-list");
-const startButton = document.getElementById("start-game");
-
-let playersListSnapshot = {}; // oggetto giocatori
-let roles = []; // array dei ruoli disponibili
+let currentUser = null;
 let isHost = false;
+let roles = [];
 
-if (!gameCode) {
-  alert("❌ Nessuna partita specificata");
-} else {
-  gameCodeSpan.textContent = gameCode;
-  const gameRef = ref(db, "games/" + gameCode);
+// 🔹 Autenticazione anonima
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    currentUser = user;
+    console.log("✅ Accesso anonimo riuscito, uid:", user.uid);
+    setupLobby();
+  } else {
+    console.error("Nessun utente autenticato!");
+  }
+});
 
-  // --- Lista giocatori live ---
-  onValue(ref(db, `games/${gameCode}/players`), (snapshot) => {
-    const players = snapshot.val() || {};
-    playersListSnapshot = players;
+async function setupLobby() {
+  // Ascolta i dati della partita
+  onValue(gameRef, (snapshot) => {
+    const gameData = snapshot.val();
+    if (!gameData) return;
 
-    playersList.innerHTML = "";
-    Object.values(players).forEach(player => {
-      const li = document.createElement("li");
-      li.textContent = `${player.name} (${player.role})`;
-      playersList.appendChild(li);
-    });
-  });
+    isHost = gameData.host === currentUser.uid;
 
-  // --- Controllo host / guest e caricamento ruoli ---
-  onValue(gameRef, async (snapshot) => {
-    const data = snapshot.val();
-    isHost = data.host === auth.currentUser.uid;
-    startButton.disabled = !isHost;
+    renderPlayers(gameData.players || {});
+    renderRoles(gameData.roles || {});
 
-    // Carica ruoli solo la prima volta
-    if (!document.getElementById("roles-container")) {
-      await loadRoles(isHost);
+    // 🔹 Redirect automatico se il gioco è partito
+    if (gameData.state?.status === "running") {
+      window.location.href = `game.html?gameCode=${gameCode}`;
     }
   });
 
-  // --- Bottone Avvia Partita ---
-  startButton.addEventListener("click", async () => {
-    if (!isHost) return;
+  // 🔹 Carica ruoli dal JSON (solo host può modificarli)
+  await loadRoles();
 
-    const countsEls = document.querySelectorAll(".count");
-    const totalRoles = Array.from(countsEls).reduce((sum, el) => sum + parseInt(el.textContent), 0);
-    const numPlayers = Object.keys(playersListSnapshot).length - 1; // escluso host
-
-    if (totalRoles !== numPlayers) {
-      alert(`❌ Il numero totale di ruoli (${totalRoles}) non corrisponde ai giocatori (${numPlayers})`);
-      return;
+  if (isHost) {
+    const startBtn = document.getElementById("start-game-btn");
+    if (startBtn) {
+      startBtn.style.display = "block";
+      startBtn.addEventListener("click", startGame);
     }
+  }
+}
 
-    // Salva ruoli selezionati nel DB
-    const rolesSelected = {};
-    countsEls.forEach((el, idx) => {
-      const c = parseInt(el.textContent);
-      if (c > 0) rolesSelected[roles[idx].name] = c;
-    });
+// 🔹 Mostra i giocatori
+function renderPlayers(players) {
+  const container = document.getElementById("players-list");
+  if (!container) return;
 
-    await set(ref(db, `games/${gameCode}/rolesSelected`), rolesSelected);
-    alert("🚀 Partita avviata!");
-    // Qui poi si reindirizza tutti i giocatori alla schermata di gioco
+  container.innerHTML = "";
+  Object.values(players).forEach((p) => {
+    const div = document.createElement("div");
+    div.textContent = p.name + (p.uid === currentUser.uid ? " (Tu)" : "");
+    if (p.uid === Object.values(players)[0].uid) {
+      div.textContent += " ⭐ (Host)";
+    }
+    container.appendChild(div);
   });
 }
 
-// --- Funzione per caricare ruoli e creare il pannello ---
-async function loadRoles(isHost) {
+// 🔹 Carica e mostra i ruoli
+async function loadRoles() {
   try {
-    const response = await fetch("./assets/data/roles.json");
-    if (!response.ok) throw new Error("Impossibile caricare roles.json");
-    roles = await response.json();
+    const res = await fetch("assets/data/roles.json");
+    roles = await res.json();
 
-    const rolesContainer = document.createElement("div");
-    rolesContainer.id = "roles-container";
-    rolesContainer.innerHTML = "<h2>Impostazioni Ruoli</h2>";
-    document.body.appendChild(rolesContainer);
+    const container = document.getElementById("roles-list");
+    if (!container) return;
 
-    roles.forEach((role, index) => {
-      const div = document.createElement("div");
-      div.innerHTML = `
-        <strong>${role.name}</strong> - <span title="${role.description}">ℹ️</span>
-        ${isHost ? `<button class="minus" data-index="${index}">-</button>` : ""}
-        <span class="count" data-index="${index}">${role.defaultCount}</span>
-        ${isHost ? `<button class="plus" data-index="${index}">+</button>` : ""}
-      `;
-      rolesContainer.appendChild(div);
+    container.innerHTML = "";
+
+    roles.forEach((role) => {
+      const wrapper = document.createElement("div");
+      wrapper.classList.add("role-item");
+
+      const label = document.createElement("span");
+      label.textContent = `${role.name}: `;
+
+      const count = document.createElement("span");
+      count.id = `role-count-${role.name}`;
+      count.textContent = role.defaultCount;
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(count);
+
+      if (isHost) {
+        const minus = document.createElement("button");
+        minus.textContent = "-";
+        minus.addEventListener("click", () => updateRole(role.name, -1));
+
+        const plus = document.createElement("button");
+        plus.textContent = "+";
+        plus.addEventListener("click", () => updateRole(role.name, 1));
+
+        wrapper.appendChild(minus);
+        wrapper.appendChild(plus);
+      }
+
+      container.appendChild(wrapper);
     });
-
-    // Gestione click + / - solo host
-    if (isHost) {
-      rolesContainer.addEventListener("click", (e) => {
-        if (!e.target.dataset.index) return;
-        const i = e.target.dataset.index;
-        const countEl = rolesContainer.querySelector(`.count[data-index='${i}']`);
-        let count = parseInt(countEl.textContent);
-
-        if (e.target.classList.contains("plus")) {
-          count++;
-        } else if (e.target.classList.contains("minus") && count > 0) {
-          count--;
-        }
-        countEl.textContent = count;
-      });
-    }
-
   } catch (err) {
-    console.error(err);
-    alert("❌ Errore nel caricamento dei ruoli");
+    console.error("Errore nel caricamento dei ruoli:", err);
   }
+}
+
+// 🔹 Aggiorna i conteggi dei ruoli nel DB
+function updateRole(roleName, delta) {
+  const roleCountEl = document.getElementById(`role-count-${roleName}`);
+  let newCount = parseInt(roleCountEl.textContent) + delta;
+  if (newCount < 0) newCount = 0;
+  roleCountEl.textContent = newCount;
+
+  update(ref(db, `games/${gameCode}/roles/${roleName}`), { count: newCount });
+}
+
+// 🔹 Sincronizza i ruoli
+function renderRoles(dbRoles) {
+  Object.keys(dbRoles).forEach((roleName) => {
+    const el = document.getElementById(`role-count-${roleName}`);
+    if (el) {
+      el.textContent = dbRoles[roleName].count;
+    }
+  });
+}
+
+// 🔹 Avvia la partita
+function startGame() {
+  update(ref(db, `games/${gameCode}/state`), {
+    status: "running",
+    phase: "night"
+  });
 }
