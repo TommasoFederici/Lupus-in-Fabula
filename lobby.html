@@ -4,23 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lobby - Lupus in Fabula</title>
+  <link rel="stylesheet" href="assets/css/lobby.css">
 </head>
 <body>
-  <h1>Lobby</h1>
+  <div class="container">
+    <h1>Lobby</h1>
 
-  <!-- Codice partita -->
-  <div id="game-code"></div>
+    <!-- Codice partita -->
+    <div id="game-code"></div>
 
-  <!-- Lista giocatori -->
-  <h2>Giocatori</h2>
-  <div id="players-list"></div>
+    <!-- Lista giocatori -->
+    <h2>Giocatori</h2>
+    <div id="players-list"></div>
 
-  <!-- Lista ruoli -->
-  <h2>Ruoli</h2>
-  <div id="roles-list"></div>
+    <!-- Lista ruoli -->
+    <h2>Ruoli</h2>
+    <div id="roles-list"></div>
 
-  <!-- Pulsante start visibile solo all'host -->
-  <button id="start-game-btn" style="display:none;">Inizia Partita</button>
+    <!-- Pulsante start visibile solo all'host -->
+    <button id="start-game-btn" style="display:none;">Inizia Partita</button>
+  </div>
 
   <script type="module" src="assets/js/lobby.js"></script>
 </body>
