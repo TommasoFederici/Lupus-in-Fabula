@@ -22,28 +22,36 @@ auth.onAuthStateChanged(async (user) => {
     console.log("✅ Accesso anonimo riuscito, uid:", user.uid);
     setupLobby();
   } else {
-    console.error("Nessun utente autenticato!");
+    console.error("❌ Nessun utente autenticato!");
   }
 });
 
 async function setupLobby() {
-  // Ascolta i dati della partita
+  // 🔹 Ascolta i dati della partita
   onValue(gameRef, (snapshot) => {
     const gameData = snapshot.val();
     if (!gameData) return;
 
+    // Determina se sei host
     isHost = gameData.host === currentUser.uid;
 
-    renderPlayers(gameData.players || {});
+    // Mostra codice partita
+    const codeEl = document.getElementById("game-code");
+    if (codeEl) codeEl.textContent = `Codice partita: ${gameCode}`;
+
+    // Mostra giocatori
+    renderPlayers(gameData.players || {}, gameData.host);
+
+    // Mostra ruoli (se sono già nel DB)
     renderRoles(gameData.roles || {});
 
-    // 🔹 Redirect automatico se il gioco è partito
+    // Redirect automatico se il gioco è iniziato
     if (gameData.state?.status === "running") {
       window.location.href = `game.html?gameCode=${gameCode}`;
     }
   });
 
-  // 🔹 Carica ruoli dal JSON (solo host può modificarli)
+  // 🔹 Carica ruoli dal JSON (solo host li può configurare)
   await loadRoles();
 
   if (isHost) {
@@ -55,30 +63,26 @@ async function setupLobby() {
   }
 }
 
+// ==================================================
 // 🔹 Mostra i giocatori
-function renderPlayers(players) {
+function renderPlayers(players, hostId) {
   const container = document.getElementById("players-list");
   if (!container) return;
 
   container.innerHTML = "";
   Object.values(players).forEach((p) => {
+    let text = p.name;
+    if (p.uid === currentUser.uid) text += " (Tu)";
+    if (p.uid === hostId) text += " ⭐ (Host)";
+
     const div = document.createElement("div");
-    div.textContent = p.name + (p.uid === currentUser.uid ? " (Tu)" : "");
-
-    // 🔹 controlla il vero host dalla partita
-    onValue(gameRef, (snapshot) => {
-      const gameData = snapshot.val();
-      if (gameData && gameData.host === p.uid) {
-        div.textContent += " ⭐ (Host)";
-      }
-    }, { onlyOnce: true });
-
+    div.textContent = text;
     container.appendChild(div);
   });
 }
 
-
-// 🔹 Carica e mostra i ruoli
+// ==================================================
+// 🔹 Carica e mostra i ruoli dal JSON
 async function loadRoles() {
   try {
     const res = await fetch("assets/data/roles.json");
@@ -117,12 +121,21 @@ async function loadRoles() {
       }
 
       container.appendChild(wrapper);
+
+      // 🔹 Se è host, inizializza i ruoli nel DB (solo la prima volta)
+      if (isHost) {
+        update(ref(db, `games/${gameCode}/roles/${role.name}`), {
+          count: role.defaultCount,
+          description: role.description
+        });
+      }
     });
   } catch (err) {
-    console.error("Errore nel caricamento dei ruoli:", err);
+    console.error("❌ Errore nel caricamento dei ruoli:", err);
   }
 }
 
+// ==================================================
 // 🔹 Aggiorna i conteggi dei ruoli nel DB
 function updateRole(roleName, delta) {
   const roleCountEl = document.getElementById(`role-count-${roleName}`);
@@ -133,7 +146,7 @@ function updateRole(roleName, delta) {
   update(ref(db, `games/${gameCode}/roles/${roleName}`), { count: newCount });
 }
 
-// 🔹 Sincronizza i ruoli
+// 🔹 Sincronizza i ruoli dal DB → UI
 function renderRoles(dbRoles) {
   Object.keys(dbRoles).forEach((roleName) => {
     const el = document.getElementById(`role-count-${roleName}`);
@@ -143,6 +156,7 @@ function renderRoles(dbRoles) {
   });
 }
 
+// ==================================================
 // 🔹 Avvia la partita
 function startGame() {
   update(ref(db, `games/${gameCode}/state`), {
