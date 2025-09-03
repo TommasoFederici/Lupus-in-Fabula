@@ -20,9 +20,17 @@ auth.onAuthStateChanged(async (user) => {
   currentPlayerData = snap.val();
   isHost = currentPlayerData.role === "host";
 
+  // 🔹 Listener globale per terminare la partita
+  onValue(ref(db, `games/${gameCode}/state/status`), (snap) => {
+    if (snap.val() === "ended") {
+      window.location.href = `lobby.html?gameCode=${gameCode}`;
+    }
+  });
+
   if (isHost) setupNarrator();
   else setupPlayer();
 });
+
 
 // ==================================================
 // 🔹 PLAYER SCREEN
