@@ -1,235 +1,158 @@
 // assets/js/game.js
 import { db, auth } from "./firebase.js";
-import { ref, onValue, get, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { ref, onValue, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
-const urlParams = new URLSearchParams(window.location.search);
-const gameCode = urlParams.get("gameCode");
-const gameRef = ref(db, `games/${gameCode}`);
+const params = new URLSearchParams(window.location.search);
+const gameCode = params.get("gameCode");
 
-let currentUser = null;
-let isHost = false;
-let currentPlayerData = null;
+// Riferimenti
+const playerView = document.getElementById("player-view");
+const narratorView = document.getElementById("narrator-view");
+const roleCard = document.getElementById("role-card");
+const toggleCardBtn = document.getElementById("toggle-card");
 
-auth.onAuthStateChanged(async (user) => {
-  if (!user) return alert("Utente non autenticato!");
-  currentUser = user;
+// Setup iniziale
+onValue(ref(db, `games/${gameCode}`), snapshot => {
+  if (!snapshot.exists()) return;
+  const gameData = snapshot.val();
+  const players = gameData.players || {};
+  const state = gameData.state || {};
 
-  const snap = await get(ref(db, `games/${gameCode}/players/${user.uid}`));
-  if (!snap.exists()) return alert("Non sei nella partita!");
+  const me = players[auth.currentUser.uid];
+  if (!me) return;
 
-  currentPlayerData = snap.val();
-  isHost = currentPlayerData.role === "host";
+  // Player normale
+  if (me.role === "guest") {
+    playerView.style.display = "block";
+    narratorView.style.display = "none";
+    roleCard.textContent = me.gameRole || "In attesa...";
+  }
 
-  if (isHost) setupNarrator();
-  else setupPlayer();
+  // Narratore
+  if (me.role === "host") {
+    playerView.style.display = "none";
+    narratorView.style.display = "block";
+    renderNarratorTable(players, state);
+  }
 });
 
-// ==================================================
-// 🔹 PLAYER SCREEN
-function setupPlayer() {
-  document.getElementById("player-view").style.display = "block";
-
-  const roleCard = document.getElementById("role-card");
-  const toggleBtn = document.getElementById("toggle-card");
-
-  let revealed = false;
-  toggleBtn.addEventListener("click", () => {
-    revealed = !revealed;
-    roleCard.textContent = revealed ? `Ruolo: ${currentPlayerData.gameRole}` : "Ruolo: ???";
+// Toggle carta ruolo
+if (toggleCardBtn) {
+  toggleCardBtn.addEventListener("click", () => {
+    roleCard.classList.toggle("hidden");
   });
 }
 
-// ==================================================
-// 🔹 NARRATOR SCREEN
-async function setupNarrator() {
-  document.getElementById("narrator-view").style.display = "block";
-  const togglePhaseBtn = document.getElementById("toggle-phase-btn");
-
-  onValue(ref(db, `games/${gameCode}/state`), async (snap) => {
-    const state = snap.val();
-    const phase = state?.phase || "night";
-    togglePhaseBtn.textContent = phase === "night" ? "Passa al giorno" : "Passa alla notte";
-    await renderNarratorTable(phase);
-  });
-
-  togglePhaseBtn.addEventListener("click", async () => {
-    const snap = await get(ref(db, `games/${gameCode}/state`));
-    const phase = snap.val()?.phase || "night";
-    const newPhase = phase === "night" ? "day" : "night";
-
-    if (phase === "night") {
-      await processNightResults();
-    }
-
-    // Reset muto a inizio giorno
-    if (newPhase === "day") {
-      const playersSnap = await get(ref(db, `games/${gameCode}/players`));
-      const players = playersSnap.val();
-      for (let uid in players) {
-        await update(ref(db, `games/${gameCode}/players/${uid}`), { isMuted: false });
-      }
-      const actionsSnap = await get(ref(db, `games/${gameCode}/nightActions`));
-      if (actionsSnap.exists() && actionsSnap.val().muted) {
-        const mutedUid = actionsSnap.val().muted;
-        await update(ref(db, `games/${gameCode}/players/${mutedUid}`), { isMuted: true });
-      }
-    }
-
-    await update(ref(db, `games/${gameCode}/state`), { phase: newPhase });
-  });
+// --- Funzioni utili ---
+function labelWrap(label, input) {
+  const span = document.createElement("label");
+  span.style.marginLeft = "10px";
+  span.appendChild(document.createTextNode(label + " "));
+  span.appendChild(input);
+  return span;
 }
 
-// ==================================================
-// 🔹 RENDER TABELLONE NARRATORE
-async function renderNarratorTable(phase) {
+function renderNarratorTable(players, gameState) {
   const container = document.getElementById("players-narrator");
+  if (!container) return;
   container.innerHTML = "";
 
-  const playersSnap = await get(ref(db, `games/${gameCode}/players`));
-  const players = playersSnap.val();
-  const activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
+  Object.entries(players).forEach(([uid, player]) => {
+    const row = document.createElement("div");
+    row.classList.add("narrator-row");
 
-  const rolesSnap = await get(ref(db, `games/${gameCode}/roles`));
-  const roles = rolesSnap.exists() ? rolesSnap.val() : {};
-  const roleNames = Object.keys(roles).filter(r => roles[r].count > 0);
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = `${player.name} (${player.gameRole || "?"})`;
+    if (!player.isAlive) nameSpan.style.textDecoration = "line-through";
+    row.appendChild(nameSpan);
 
-  // Prima notte → Mitomane
-  const stateSnap = await get(ref(db, `games/${gameCode}/state/nightNumber`));
-  const nightNumber = stateSnap.exists() ? stateSnap.val() : 1;
-
-  activePlayers.forEach(([uid, p]) => {
-    const li = document.createElement("li");
-    li.textContent = `${p.name} (${p.gameRole})`;
-
-    if (phase === "night") {
-      // Casella Ucciso (tutti tranne i Lupi)
-      if (roleNames.includes("Lupo") && p.gameRole !== "Lupo") {
-        const chk = document.createElement("input");
-        chk.type = "checkbox";
-        chk.addEventListener("change", async () => {
-          const refArr = ref(db, `games/${gameCode}/nightActions/killed`);
-          const snap = await get(refArr);
-          let arr = snap.exists() ? snap.val() : [];
-          arr = arr.filter(id => id !== uid);
-          if (chk.checked) arr.push(uid);
-          await update(ref(db, `games/${gameCode}/nightActions`), { killed: arr });
+    // Casella Ucciso (solo di notte, non per i lupi)
+    if (gameState.phase === "night" && player.gameRole !== "lupo") {
+      const killBox = document.createElement("input");
+      killBox.type = "checkbox";
+      killBox.checked = !!player.markedKilled;
+      killBox.addEventListener("change", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), {
+          markedKilled: killBox.checked
         });
-        li.append(" | Ucciso ", chk);
-      }
-
-      // Casella Salvato (se c'è la Puttana)
-      if (roleNames.includes("Puttana")) {
-        const chk = document.createElement("input");
-        chk.type = "radio";
-        chk.name = "puttana";
-        chk.addEventListener("change", async () => {
-          await update(ref(db, `games/${gameCode}/nightActions`), { saved: uid });
-        });
-        li.append(" | Salvato ", chk);
-      }
-
-      // Casella Amanti (solo se ci sono Amanti)
-      if (roleNames.includes("Amante")) {
-        const chk = document.createElement("input");
-        chk.type = "checkbox";
-        chk.addEventListener("change", async () => {
-          const refArr = ref(db, `games/${gameCode}/nightActions/lovers`);
-          const snap = await get(refArr);
-          let arr = snap.exists() ? snap.val() : [];
-          arr = arr.filter(id => id !== uid);
-          if (chk.checked) arr.push(uid);
-          await update(ref(db, `games/${gameCode}/nightActions`), { lovers: arr });
-        });
-        li.append(" | Amante ", chk);
-      }
-
-      // Casella Muto (se c’è il Muto e il player non è Muto)
-      if (roleNames.includes("Muto") && p.gameRole !== "Muto") {
-        const chk = document.createElement("input");
-        chk.type = "radio";
-        chk.name = "muto";
-        chk.addEventListener("change", async () => {
-          await update(ref(db, `games/${gameCode}/nightActions`), { muted: uid });
-        });
-        li.append(" | Muto ", chk);
-      }
-
-      // Mitomane prima notte
-      if (nightNumber === 1 && p.gameRole === "Mitomane") {
-        const select = document.createElement("select");
-        roleNames.forEach(rn => {
-          if (rn !== "Mitomane") {
-            const opt = document.createElement("option");
-            opt.value = rn;
-            opt.textContent = rn;
-            select.appendChild(opt);
-          }
-        });
-        select.addEventListener("change", async () => {
-          await update(ref(db, `games/${gameCode}/nightActions`), { mitomaneRole: select.value });
-        });
-        li.append(" | Nuovo ruolo: ", select);
-      }
-
-    } else {
-      // Giorno: mostra stato e pulsante elimina/resuscita
-      li.append(` | Stato: ${p.isAlive ? "Vivo" : "Morto"}`);
-      const btn = document.createElement("button");
-      btn.textContent = p.isAlive ? "Elimina" : "Resuscita";
-      btn.addEventListener("click", async () => {
-        await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: !p.isAlive });
       });
-      li.append(" ", btn);
+      row.appendChild(labelWrap("Ucciso", killBox));
     }
 
-    container.appendChild(li);
+    // Casella Salvato (solo di notte)
+    if (gameState.phase === "night") {
+      const saveBox = document.createElement("input");
+      saveBox.type = "checkbox";
+      saveBox.checked = !!player.markedSaved;
+      saveBox.addEventListener("change", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), {
+          markedSaved: saveBox.checked
+        });
+      });
+      row.appendChild(labelWrap("Salvato", saveBox));
+    }
+
+    // Casella Amanti (solo se il player è amante)
+    if (gameState.phase === "night" && player.gameRole === "amante") {
+      const loveBox = document.createElement("input");
+      loveBox.type = "checkbox";
+      loveBox.checked = !!player.isSleepingWith;
+      loveBox.addEventListener("change", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), {
+          isSleepingWith: loveBox.checked
+        });
+      });
+      row.appendChild(labelWrap("Amanti", loveBox));
+    }
+
+    // Casella Muto (solo se il player non è muto)
+    if (gameState.phase === "night" && player.gameRole !== "muto") {
+      const muteBox = document.createElement("input");
+      muteBox.type = "checkbox";
+      muteBox.checked = !!player.mutato;
+      muteBox.addEventListener("change", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), {
+          mutato: muteBox.checked
+        });
+      });
+      row.appendChild(labelWrap("Muto", muteBox));
+    }
+
+    // Mitomane (solo prima notte, se presente)
+    if (gameState.phase === "night" && gameState.nightCount === 1 && player.gameRole === "mitomane") {
+      const select = document.createElement("select");
+      ["lupo", "veggente", "puttana", "amante", "muto"].forEach(role => {
+        const option = document.createElement("option");
+        option.value = role;
+        option.textContent = role;
+        select.appendChild(option);
+      });
+      select.addEventListener("change", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), {
+          copiedRole: select.value
+        });
+      });
+      row.appendChild(labelWrap("Diventa", select));
+    }
+
+    // Tasti elimina/resuscita (solo di giorno)
+    if (gameState.phase === "day") {
+      const killBtn = document.createElement("button");
+      killBtn.textContent = "Elimina";
+      killBtn.addEventListener("click", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: false });
+      });
+
+      const resBtn = document.createElement("button");
+      resBtn.textContent = "Resuscita";
+      resBtn.addEventListener("click", () => {
+        update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: true });
+      });
+
+      row.appendChild(killBtn);
+      row.appendChild(resBtn);
+    }
+
+    container.appendChild(row);
   });
-}
-
-// ==================================================
-// 🔹 PROCESS NIGHT LOGIC
-async function processNightResults() {
-  const actionsSnap = await get(ref(db, `games/${gameCode}/nightActions`));
-  const actions = actionsSnap.exists() ? actionsSnap.val() : {};
-
-  const playersSnap = await get(ref(db, `games/${gameCode}/players`));
-  const players = playersSnap.val();
-
-  const killed = actions.killed || [];
-  const saved = actions.saved || null;
-  const lovers = actions.lovers || [];
-  const muted = actions.muted || null;
-
-  // Aggiornamenti
-  for (let uid of killed) {
-    if (uid === saved) continue;
-    if (lovers.includes(uid)) {
-      for (let l of lovers) {
-        await update(ref(db, `games/${gameCode}/players/${l}`), { isAlive: false });
-      }
-    } else {
-      await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: false });
-    }
-  }
-
-  // Gestione Muto
-  if (muted) {
-    await update(ref(db, `games/${gameCode}/players/${muted}`), { isMuted: true });
-  }
-
-  // Mitomane (prima notte)
-  const stateSnap = await get(ref(db, `games/${gameCode}/state/nightNumber`));
-  const nightNumber = stateSnap.exists() ? stateSnap.val() : 1;
-  if (nightNumber === 1 && actions.mitomaneRole) {
-    const mitUid = Object.keys(players).find(uid => players[uid].gameRole === "Mitomane");
-    if (mitUid) {
-      await update(ref(db, `games/${gameCode}/players/${mitUid}`), { gameRole: actions.mitomaneRole });
-    }
-  }
-
-  // Incrementa numero notti
-  await update(ref(db, `games/${gameCode}/state`), { nightNumber: nightNumber + 1 });
-
-  // Pulizia azioni notte
-  await update(ref(db, `games/${gameCode}/nightActions`), {});
 }
