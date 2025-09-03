@@ -64,12 +64,19 @@ function renderPlayers(players) {
   Object.values(players).forEach((p) => {
     const div = document.createElement("div");
     div.textContent = p.name + (p.uid === currentUser.uid ? " (Tu)" : "");
-    if (p.uid === Object.values(players)[0].uid) {
-      div.textContent += " ⭐ (Host)";
-    }
+
+    // 🔹 controlla il vero host dalla partita
+    onValue(gameRef, (snapshot) => {
+      const gameData = snapshot.val();
+      if (gameData && gameData.host === p.uid) {
+        div.textContent += " ⭐ (Host)";
+      }
+    }, { onlyOnce: true });
+
     container.appendChild(div);
   });
 }
+
 
 // 🔹 Carica e mostra i ruoli
 async function loadRoles() {
