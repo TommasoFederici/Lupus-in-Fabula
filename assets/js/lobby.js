@@ -28,11 +28,12 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 async function setupLobby() {
-  // 🔹 Ascolta i dati della partita
-  onValue(gameRef, (snapshot) => {
+  // 🔹 Ascolta i dati della partita in tempo reale
+  onValue(gameRef, async (snapshot) => {
     const gameData = snapshot.val();
     if (!gameData) return;
 
+    // Determina se sei host
     isHost = gameData.host === currentUser.uid;
 
     // Mostra codice partita
@@ -42,7 +43,22 @@ async function setupLobby() {
     // Mostra lista giocatori
     renderPlayers(gameData.players || {}, gameData.host);
 
-    // Mostra ruoli dal DB se esistono
+    // 🔹 Carica ruoli dal JSON (solo dopo che isHost è aggiornato)
+    await loadRoles();
+
+    // 🔹 Mostra tasto start se sei host
+    if (isHost) {
+      const startBtn = document.getElementById("start-game-btn");
+      if (startBtn) {
+        startBtn.style.display = "block";
+        if (!startBtn.dataset.listener) {
+          startBtn.addEventListener("click", startGame);
+          startBtn.dataset.listener = true; // evita multipli listener
+        }
+      }
+    }
+
+    // Mostra ruoli dal DB se già presenti
     renderRoles(gameData.roles || {});
 
     // Redirect automatico se partita in corso
@@ -50,21 +66,10 @@ async function setupLobby() {
       window.location.href = `game.html?gameCode=${gameCode}`;
     }
   });
-
-  // 🔹 Carica ruoli dal JSON
-  await loadRoles();
-
-  // 🔹 Se sei host, mostra start button
-  if (isHost) {
-    const startBtn = document.getElementById("start-game-btn");
-    if (startBtn) {
-      startBtn.style.display = "block";
-      startBtn.addEventListener("click", startGame);
-    }
-  }
 }
 
-// 🔹 Mostra giocatori
+// ==================================================
+// 🔹 Mostra i giocatori
 function renderPlayers(players, hostId) {
   const container = document.getElementById("players-list");
   if (!container) return;
@@ -81,7 +86,8 @@ function renderPlayers(players, hostId) {
   });
 }
 
-// 🔹 Carica ruoli da JSON
+// ==================================================
+// 🔹 Carica ruoli da JSON e crea bottoni se host
 async function loadRoles() {
   try {
     const res = await fetch("assets/data/roles.json");
@@ -133,6 +139,7 @@ async function loadRoles() {
   }
 }
 
+// ==================================================
 // 🔹 Aggiorna conteggi ruoli nel DB
 function updateRole(roleName, delta) {
   const roleCountEl = document.getElementById(`role-count-${roleName}`);
@@ -143,6 +150,7 @@ function updateRole(roleName, delta) {
   update(ref(db, `games/${gameCode}/roles/${roleName}`), { count: newCount });
 }
 
+// ==================================================
 // 🔹 Sincronizza ruoli dal DB
 function renderRoles(dbRoles) {
   Object.keys(dbRoles).forEach((roleName) => {
@@ -151,6 +159,7 @@ function renderRoles(dbRoles) {
   });
 }
 
+// ==================================================
 // 🔹 Avvia partita (solo host)
 async function startGame() {
   const snapshot = await get(ref(db, `games/${gameCode}/players`));
