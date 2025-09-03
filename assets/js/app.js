@@ -1,6 +1,6 @@
 // assets/js/app.js
 import { db, auth } from "./firebase.js";
-import { ref, set, push, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
 // --- Creazione nuova partita ---
 document.getElementById("new-game").addEventListener("click", async () => {
@@ -17,18 +17,19 @@ document.getElementById("new-game").addEventListener("click", async () => {
     // Scrive la partita nel DB
     await set(gameRef, {
       host: auth.currentUser.uid,       // uid dell’host
-      status: "waiting",
+      state: { status: "waiting" },     // stato iniziale
       players: {
         [auth.currentUser.uid]: { 
-          name: playerName,
-          role: "host"                 // segnala che è host/narratore
+          uid: auth.currentUser.uid,    // 👈 aggiunto
+          name: playerName
         }
       }
     });
 
     alert(`✅ Partita creata! Codice: ${gameCode}`);
     console.log(`Partita creata con host: ${playerName} (${auth.currentUser.uid})`);
-    // Dopo aver creato la partita nel DB
+
+    // Redirect alla lobby
     window.location.href = `lobby.html?gameCode=${gameCode}`;
 
   } catch (err) {
@@ -56,10 +57,13 @@ document.getElementById("join-game").addEventListener("click", async () => {
 
     // Aggiunge il giocatore come guest
     const playerRef = ref(db, `games/${gameCode.toUpperCase()}/players/${auth.currentUser.uid}`);
-    await set(playerRef, { name: playerName, role: "guest" });
+    await set(playerRef, { 
+      uid: auth.currentUser.uid,   // 👈 aggiunto
+      name: playerName
+    });
 
     alert("✅ Sei entrato nella partita!");
-    // Dopo aver aggiunto il giocatore
+    // Redirect alla lobby
     window.location.href = `lobby.html?gameCode=${gameCode.toUpperCase()}`;
 
   } catch (err) {

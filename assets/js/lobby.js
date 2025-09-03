@@ -3,7 +3,6 @@ import { db, auth } from "./firebase.js";
 import {
   ref,
   onValue,
-  set,
   update
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
