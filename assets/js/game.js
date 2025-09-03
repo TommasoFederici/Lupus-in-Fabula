@@ -233,5 +233,17 @@ async function processNightResults() {
 // ==================================================
 // 🔹 TERMINA PARTITA
 document.getElementById("end-game-btn").addEventListener("click", async () => {
+  // 1️⃣ Prendi tutti i giocatori
+  const playersSnap = await get(ref(db, `games/${gameCode}/players`));
+  const players = playersSnap.exists() ? playersSnap.val() : {};
+
+  // 2️⃣ Imposta tutti i giocatori non-host come isAlive: true
+  for (let uid in players) {
+    if (players[uid].role !== "host") {
+      await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: true });
+    }
+  }
+
+  // 3️⃣ Aggiorna lo stato della partita a "ended"
   await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
 });
