@@ -7,8 +7,8 @@ const gameCode = urlParams.get("gameCode");
 const gameRef = ref(db, `games/${gameCode}`);
 
 let currentUser = null;
-let isHost = false;
 let currentPlayerData = null;
+let isHost = false;
 
 auth.onAuthStateChanged(async (user) => {
   if (!user) return alert("Utente non autenticato!");
@@ -20,41 +20,45 @@ auth.onAuthStateChanged(async (user) => {
   currentPlayerData = snap.val();
   isHost = currentPlayerData.role === "host";
 
-  if (isHost) setupNarrator();
-  else setupPlayer();
+  if (isHost) {
+    document.getElementById("narrator-view").style.display = "block";
+    setupNarrator();
+  } else {
+    document.getElementById("player-view").style.display = "block";
+    setupPlayer();
+  }
 });
 
-// ==================================================
+// ===============================
 // 🔹 PLAYER SCREEN
 function setupPlayer() {
-  const container = document.getElementById("player-card-container");
-  if (!container) return;
+  const cardContainer = document.getElementById("player-card-container");
+  if (!cardContainer) return;
 
   const card = document.createElement("div");
   card.classList.add("player-card");
   card.textContent = "Ruolo: ???";
   let revealed = false;
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.textContent = "Mostra / Nascondi ruolo";
+  const toggleBtn = document.getElementById("toggle-card");
   toggleBtn.addEventListener("click", () => {
     revealed = !revealed;
     card.textContent = revealed ? `Ruolo: ${currentPlayerData.gameRole}` : "Ruolo: ???";
   });
 
-  container.appendChild(card);
-  container.appendChild(toggleBtn);
+  cardContainer.appendChild(card);
 }
 
-// ==================================================
+// ===============================
 // 🔹 NARRATOR SCREEN
 async function setupNarrator() {
   const togglePhaseBtn = document.getElementById("toggle-phase-btn");
   const tableContainer = document.getElementById("narrator-table-container");
 
+  // Aggiorna fase
   onValue(ref(db, `games/${gameCode}/state`), async (snap) => {
-    const state = snap.val();
-    const phase = state?.phase || "night";
+    const state = snap.val() || {};
+    const phase = state.phase || "night";
     togglePhaseBtn.textContent = phase === "night" ? "Passa al giorno" : "Passa alla notte";
     await renderNarratorTable(phase);
   });
@@ -70,7 +74,7 @@ async function setupNarrator() {
   });
 }
 
-// ==================================================
+// ===============================
 // 🔹 RENDER TABELLONE NARRATORE
 async function renderNarratorTable(phase) {
   const tableContainer = document.getElementById("narrator-table-container");
@@ -88,7 +92,6 @@ async function renderNarratorTable(phase) {
   const headers = ["Giocatore", "Ruolo"];
   if (phase === "night") headers.push("Lupo", "Puttana", "Amanti", "Muto");
   else headers.push("Stato", "Elimina/Resuscita");
-
   headers.forEach(h => {
     const th = document.createElement("th");
     th.textContent = h;
@@ -109,56 +112,27 @@ async function renderNarratorTable(phase) {
     row.appendChild(roleCell);
 
     if (phase === "night") {
-      // Lupo
-      const wolfCell = document.createElement("td");
-      const wolfChk = document.createElement("input");
-      wolfChk.type = "checkbox";
-      wolfChk.checked = false;
-      wolfChk.addEventListener("change", async () => {
-        const nightRef = ref(db, `games/${gameCode}/nightActions/killedByWolves`);
-        const snap = await get(nightRef);
-        let arr = snap.exists() ? snap.val() : [];
-        arr = arr.filter(id => id !== uid);
-        if (wolfChk.checked) arr.push(uid);
-        await update(ref(db, `games/${gameCode}/nightActions`), { killedByWolves: arr });
-      });
-      wolfCell.appendChild(wolfChk);
-      row.appendChild(wolfCell);
+      ["killedByWolves", "savedByPuttana", "lovers", "muted"].forEach((action, i) => {
+        const cell = document.createElement("td");
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.addEventListener("change", async () => {
+          const nightRef = ref(db, `games/${gameCode}/nightActions`);
+          const snap = await get(nightRef);
+          let arr = snap.exists() ? snap.val()[action] : null;
 
-      // Puttana
-      const puttanaCell = document.createElement("td");
-      const puttanaChk = document.createElement("input");
-      puttanaChk.type = "checkbox";
-      puttanaChk.addEventListener("change", async () => {
-        await update(ref(db, `games/${gameCode}/nightActions`), { savedByPuttana: puttanaChk.checked ? uid : null });
+          if (action === "savedByPuttana" || action === "muted") {
+            await update(nightRef, { [action]: chk.checked ? uid : null });
+          } else {
+            arr = arr || [];
+            arr = arr.filter(id => id !== uid);
+            if (chk.checked) arr.push(uid);
+            await update(nightRef, { [action]: arr });
+          }
+        });
+        cell.appendChild(chk);
+        row.appendChild(cell);
       });
-      puttanaCell.appendChild(puttanaChk);
-      row.appendChild(puttanaCell);
-
-      // Amanti
-      const loversCell = document.createElement("td");
-      const loversChk = document.createElement("input");
-      loversChk.type = "checkbox";
-      loversChk.addEventListener("change", async () => {
-        const nightRef = ref(db, `games/${gameCode}/nightActions/lovers`);
-        const snap = await get(nightRef);
-        let arr = snap.exists() ? snap.val() : [];
-        arr = arr.filter(id => id !== uid);
-        if (loversChk.checked) arr.push(uid);
-        await update(ref(db, `games/${gameCode}/nightActions`), { lovers: arr });
-      });
-      loversCell.appendChild(loversChk);
-      row.appendChild(loversCell);
-
-      // Muto
-      const mutoCell = document.createElement("td");
-      const mutoChk = document.createElement("input");
-      mutoChk.type = "checkbox";
-      mutoChk.addEventListener("change", async () => {
-        await update(ref(db, `games/${gameCode}/nightActions`), { muted: mutoChk.checked ? uid : null });
-      });
-      mutoCell.appendChild(mutoChk);
-      row.appendChild(mutoCell);
     } else {
       const stateCell = document.createElement("td");
       stateCell.textContent = p.isAlive ? "Vivo" : "Morto";
@@ -200,7 +174,7 @@ async function renderNarratorTable(phase) {
   tableContainer.appendChild(table);
 }
 
-// ==================================================
+// ===============================
 // 🔹 PROCESS NIGHT LOGIC
 async function processNightResults() {
   const actionsSnap = await get(ref(db, `games/${gameCode}/nightActions`));
@@ -215,7 +189,7 @@ async function processNightResults() {
   const lovers = actions.lovers || [];
 
   killed.forEach(uid => {
-    if (uid === saved) return; // salvato
+    if (uid === saved) return;
     const isLover = lovers.includes(uid);
     if (isLover) lovers.forEach(l => { updated[l] = false; });
     else updated[uid] = false;
@@ -229,6 +203,5 @@ async function processNightResults() {
   const nightNumber = nightSnap.exists() ? nightSnap.val() : 1;
   await update(ref(db, `games/${gameCode}/state`), { nightNumber: nightNumber + 1 });
 
-  // Pulizia azioni notte
   await update(ref(db, `games/${gameCode}/nightActions`), {});
 }
