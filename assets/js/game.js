@@ -1,5 +1,6 @@
+// assets/js/game.js
 import { db, auth } from "./firebase.js";
-import { ref, onValue, update, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { ref, onValue, get, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const gameCode = urlParams.get("gameCode");
@@ -7,149 +8,227 @@ const gameRef = ref(db, `games/${gameCode}`);
 
 let currentUser = null;
 let isHost = false;
-let currentPlayer = null;
-let playersData = {};
+let currentPlayerData = null;
 
-// 🔹 Autenticazione
 auth.onAuthStateChanged(async (user) => {
-  if (!user) return console.error("❌ Nessun utente autenticato!");
+  if (!user) return alert("Utente non autenticato!");
   currentUser = user;
 
-  const snapshot = await get(ref(db, `games/${gameCode}/players/${currentUser.uid}`));
-  if (!snapshot.exists()) return alert("Giocatore non trovato!");
-  currentPlayer = snapshot.val();
-  isHost = currentPlayer.role === "host";
+  const snap = await get(ref(db, `games/${gameCode}/players/${user.uid}`));
+  if (!snap.exists()) return alert("Non sei nella partita!");
 
-  if (isHost) {
-    document.getElementById("narrator-view").style.display = "block";
-    setupNarrator();
-  } else {
-    document.getElementById("player-view").style.display = "block";
-    setupPlayer();
-  }
+  currentPlayerData = snap.val();
+  isHost = currentPlayerData.role === "host";
+
+  if (isHost) setupNarrator();
+  else setupPlayer();
 });
 
 // ==================================================
-// 🔹 Player view
+// 🔹 PLAYER SCREEN
 function setupPlayer() {
-  const cardEl = document.getElementById("role-card");
-  const toggleBtn = document.getElementById("toggle-card");
+  const container = document.getElementById("player-card-container");
+  if (!container) return;
 
-  const showRole = () => cardEl.textContent = currentPlayer.gameRole || "Non ancora assegnato";
-  const hideRole = () => cardEl.textContent = "Ruolo";
+  const card = document.createElement("div");
+  card.classList.add("player-card");
+  card.textContent = "Ruolo: ???";
+  let revealed = false;
 
+  const toggleBtn = document.createElement("button");
+  toggleBtn.textContent = "Mostra / Nascondi ruolo";
   toggleBtn.addEventListener("click", () => {
-    cardEl.textContent === "Ruolo" ? showRole() : hideRole();
+    revealed = !revealed;
+    card.textContent = revealed ? `Ruolo: ${currentPlayerData.gameRole}` : "Ruolo: ???";
   });
 
-  showRole();
+  container.appendChild(card);
+  container.appendChild(toggleBtn);
 }
 
 // ==================================================
-// 🔹 Narrator view
+// 🔹 NARRATOR SCREEN
 async function setupNarrator() {
-  const playersList = document.getElementById("players-narrator");
-  const dayBtn = document.getElementById("day-btn");
-  const nightBtn = document.getElementById("night-btn");
-  const endBtn = document.getElementById("end-game-btn");
+  const togglePhaseBtn = document.getElementById("toggle-phase-btn");
+  const tableContainer = document.getElementById("narrator-table-container");
 
-  // 🔹 Ascolta i giocatori
-  onValue(ref(db, `games/${gameCode}/players`), (snapshot) => {
-    playersData = snapshot.val() || {};
-    renderPlayersList();
+  onValue(ref(db, `games/${gameCode}/state`), async (snap) => {
+    const state = snap.val();
+    const phase = state?.phase || "night";
+    togglePhaseBtn.textContent = phase === "night" ? "Passa al giorno" : "Passa alla notte";
+    await renderNarratorTable(phase);
   });
 
-  dayBtn.addEventListener("click", () => {
-    update(ref(db, `games/${gameCode}/state`), { phase: "day" });
-    applyNightActions(); // Applica azioni della notte appena finita
-  });
+  togglePhaseBtn.addEventListener("click", async () => {
+    const snap = await get(ref(db, `games/${gameCode}/state`));
+    const phase = snap.val()?.phase || "night";
+    const newPhase = phase === "night" ? "day" : "night";
 
-  nightBtn.addEventListener("click", () => update(ref(db, `games/${gameCode}/state`), { phase: "night" }));
+    await update(ref(db, `games/${gameCode}/state`), { phase: newPhase });
 
-  endBtn.addEventListener("click", async () => {
-    await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
-    window.location.href = `lobby.html?gameCode=${gameCode}`;
-  });
-}
-
-// 🔹 Mostra lista giocatori nel narratore
-function renderPlayersList() {
-  const listEl = document.getElementById("players-narrator");
-  listEl.innerHTML = "";
-
-  Object.entries(playersData).forEach(([uid, p]) => {
-    const li = document.createElement("li");
-    li.textContent = `${p.name} - Ruolo: ${p.gameRole || "Non assegnato"} - Vivo: ${p.isAlive}`;
-    if (p.role !== "host") {
-      li.dataset.uid = uid;
-      li.addEventListener("click", () => toggleTarget(li));
-    }
-    listEl.appendChild(li);
+    if (phase === "night") await processNightResults();
   });
 }
 
 // ==================================================
-// 🔹 Gestione selezione target (per Lupi, Puttana, Muto, Amanti)
-const nightTargets = {
-  wolves: [],
-  puttana: null,
-  muto: null,
-  amanti: {}
-};
+// 🔹 RENDER TABELLONE NARRATORE
+async function renderNarratorTable(phase) {
+  const tableContainer = document.getElementById("narrator-table-container");
+  tableContainer.innerHTML = "";
 
-function toggleTarget(li) {
-  const uid = li.dataset.uid;
-  const phase = document.getElementById("night-btn").disabled ? "day" : "night";
-  if (phase !== "night") return;
+  const playersSnap = await get(ref(db, `games/${gameCode}/players`));
+  const players = playersSnap.val();
+  const activePlayers = Object.entries(players).filter(([uid, p]) => p.role !== "host");
 
-  // 🔹 Esempio: aggiunge/ritira dai target dei lupi
-  if (nightTargets.wolves.includes(uid)) {
-    nightTargets.wolves = nightTargets.wolves.filter(x => x !== uid);
-    li.style.background = "";
-  } else {
-    nightTargets.wolves.push(uid);
-    li.style.background = "red";
+  const table = document.createElement("table");
+  table.classList.add("narrator-table");
+
+  // Header
+  const header = document.createElement("tr");
+  const headers = ["Giocatore", "Ruolo"];
+  if (phase === "night") headers.push("Lupo", "Puttana", "Amanti", "Muto");
+  else headers.push("Stato", "Elimina/Resuscita");
+
+  headers.forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    header.appendChild(th);
+  });
+  table.appendChild(header);
+
+  // Rows
+  activePlayers.forEach(([uid, p]) => {
+    const row = document.createElement("tr");
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = p.name;
+    row.appendChild(nameCell);
+
+    const roleCell = document.createElement("td");
+    roleCell.textContent = p.gameRole;
+    row.appendChild(roleCell);
+
+    if (phase === "night") {
+      // Lupo
+      const wolfCell = document.createElement("td");
+      const wolfChk = document.createElement("input");
+      wolfChk.type = "checkbox";
+      wolfChk.checked = false;
+      wolfChk.addEventListener("change", async () => {
+        const nightRef = ref(db, `games/${gameCode}/nightActions/killedByWolves`);
+        const snap = await get(nightRef);
+        let arr = snap.exists() ? snap.val() : [];
+        arr = arr.filter(id => id !== uid);
+        if (wolfChk.checked) arr.push(uid);
+        await update(ref(db, `games/${gameCode}/nightActions`), { killedByWolves: arr });
+      });
+      wolfCell.appendChild(wolfChk);
+      row.appendChild(wolfCell);
+
+      // Puttana
+      const puttanaCell = document.createElement("td");
+      const puttanaChk = document.createElement("input");
+      puttanaChk.type = "checkbox";
+      puttanaChk.addEventListener("change", async () => {
+        await update(ref(db, `games/${gameCode}/nightActions`), { savedByPuttana: puttanaChk.checked ? uid : null });
+      });
+      puttanaCell.appendChild(puttanaChk);
+      row.appendChild(puttanaCell);
+
+      // Amanti
+      const loversCell = document.createElement("td");
+      const loversChk = document.createElement("input");
+      loversChk.type = "checkbox";
+      loversChk.addEventListener("change", async () => {
+        const nightRef = ref(db, `games/${gameCode}/nightActions/lovers`);
+        const snap = await get(nightRef);
+        let arr = snap.exists() ? snap.val() : [];
+        arr = arr.filter(id => id !== uid);
+        if (loversChk.checked) arr.push(uid);
+        await update(ref(db, `games/${gameCode}/nightActions`), { lovers: arr });
+      });
+      loversCell.appendChild(loversChk);
+      row.appendChild(loversCell);
+
+      // Muto
+      const mutoCell = document.createElement("td");
+      const mutoChk = document.createElement("input");
+      mutoChk.type = "checkbox";
+      mutoChk.addEventListener("change", async () => {
+        await update(ref(db, `games/${gameCode}/nightActions`), { muted: mutoChk.checked ? uid : null });
+      });
+      mutoCell.appendChild(mutoChk);
+      row.appendChild(mutoCell);
+    } else {
+      const stateCell = document.createElement("td");
+      stateCell.textContent = p.isAlive ? "Vivo" : "Morto";
+      row.appendChild(stateCell);
+
+      const actionCell = document.createElement("td");
+      const btn = document.createElement("button");
+      btn.textContent = p.isAlive ? "Elimina" : "Resuscita";
+      btn.addEventListener("click", async () => {
+        await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: !p.isAlive });
+      });
+      actionCell.appendChild(btn);
+      row.appendChild(actionCell);
+    }
+
+    table.appendChild(row);
+  });
+
+  // Prima notte: Mitomane
+  const stateSnap = await get(ref(db, `games/${gameCode}/state/nightNumber`));
+  const nightNumber = stateSnap.exists() ? stateSnap.val() : 1;
+  if (phase === "night" && nightNumber === 1) {
+    const mitDiv = document.createElement("div");
+    mitDiv.textContent = "Cambia ruolo Mitomane:";
+    const select = document.createElement("select");
+    activePlayers.forEach(([uid, p]) => {
+      const opt = document.createElement("option");
+      opt.value = uid;
+      opt.textContent = p.name;
+      select.appendChild(opt);
+    });
+    select.addEventListener("change", async () => {
+      await update(ref(db, `games/${gameCode}/nightActions`), { mitomaneChange: select.value });
+    });
+    mitDiv.appendChild(select);
+    tableContainer.appendChild(mitDiv);
   }
+
+  tableContainer.appendChild(table);
 }
 
 // ==================================================
-// 🔹 Applica le azioni della notte
-async function applyNightActions() {
-  let updates = {};
+// 🔹 PROCESS NIGHT LOGIC
+async function processNightResults() {
+  const actionsSnap = await get(ref(db, `games/${gameCode}/nightActions`));
+  const actions = actionsSnap.exists() ? actionsSnap.val() : {};
 
-  // 🔹 Prima determinare chi muore
-  let toKill = new Set(nightTargets.wolves);
+  const playersSnap = await get(ref(db, `games/${gameCode}/players`));
+  const players = playersSnap.val();
+  const updated = {};
 
-  // 🔹 Gestione amanti
-  Object.values(playersData).forEach(p => {
-    if (p.gameRole === "Amante") {
-      const lover = nightTargets.amanti[p.uid];
-      if (lover && toKill.has(lover)) {
-        toKill.add(p.uid); // L'amante muore se dorme con la vittima dei lupi
-      }
-    }
+  const killed = actions.killedByWolves || [];
+  const saved = actions.savedByPuttana || null;
+  const lovers = actions.lovers || [];
+
+  killed.forEach(uid => {
+    if (uid === saved) return; // salvato
+    const isLover = lovers.includes(uid);
+    if (isLover) lovers.forEach(l => { updated[l] = false; });
+    else updated[uid] = false;
   });
 
-  // 🔹 Gestione Puttana
-  if (nightTargets.puttana) {
-    toKill.delete(nightTargets.puttana); // Puttana salva
+  for (let uid in updated) {
+    await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: updated[uid] });
   }
 
-  // 🔹 Gestione Muto
-  if (nightTargets.muto) {
-    // eventualmente aggiornare lo stato di silenziato del player
-  }
+  const nightSnap = await get(ref(db, `games/${gameCode}/state/nightNumber`));
+  const nightNumber = nightSnap.exists() ? nightSnap.val() : 1;
+  await update(ref(db, `games/${gameCode}/state`), { nightNumber: nightNumber + 1 });
 
-  // 🔹 Aggiorna isAlive nel DB
-  Object.keys(playersData).forEach(uid => {
-    if (toKill.has(uid)) updates[`players/${uid}/isAlive`] = false;
-  });
-
-  await update(ref(db, `games/${gameCode}`), updates);
-
-  // Reset targets per la notte successiva
-  nightTargets.wolves = [];
-  nightTargets.puttana = null;
-  nightTargets.muto = null;
-  nightTargets.amanti = {};
+  // Pulizia azioni notte
+  await update(ref(db, `games/${gameCode}/nightActions`), {});
 }
