@@ -1,0 +1,109 @@
+/* Stile generale */
+body {
+  margin: 0;
+  font-family: "Poppins", sans-serif;
+  background: #1a1a2e;
+  color: #f1f1f1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+#game-container {
+  width: 100%;
+  max-width: 480px;
+  background: #22223b;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+}
+
+/* Titoli */
+h2, h3 {
+  text-align: center;
+  margin-bottom: 1rem;
+  color: #e0e0ff;
+}
+
+/* Card ruolo giocatore */
+#role-card {
+  background: #2e2e52;
+  border: 2px solid #4a4a7d;
+  border-radius: 12px;
+  padding: 1.2rem;
+  font-size: 1.3rem;
+  text-align: center;
+  margin: 1rem auto;
+  transition: transform 0.2s;
+}
+#role-card:hover {
+  transform: scale(1.05);
+}
+
+/* Pulsanti */
+button {
+  display: block;
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.8rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+button:hover {
+  transform: translateY(-2px);
+}
+
+#toggle-card {
+  background: #4a90e2;
+  color: white;
+}
+
+#toggle-phase-btn {
+  background: #ffb703;
+  color: #1a1a2e;
+}
+
+#end-game-btn {
+  background: #e63946;
+  color: white;
+}
+
+/* Lista giocatori */
+#players-narrator {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+#players-narrator li {
+  background: #2b2b44;
+  margin-bottom: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.95rem;
+}
+
+#players-narrator button {
+  width: auto;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+/* Contenitore tabella narratore */
+#narrator-table-container {
+  margin: 1rem 0;
+  padding: 0.8rem;
+  background: #252542;
+  border-radius: 12px;
+}
