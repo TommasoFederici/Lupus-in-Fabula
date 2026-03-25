@@ -72,6 +72,8 @@ async function setupNarrator() {
   });
 
   togglePhaseBtn.addEventListener("click", async () => {
+    togglePhaseBtn.disabled = true; // 🔴 Disabilita il tasto per evitare doppi click
+
     const snap = await get(ref(db, `games/${gameCode}/state`));
     const phase = snap.val()?.phase || "night";
     const newPhase = phase === "night" ? "day" : "night";
@@ -79,6 +81,8 @@ async function setupNarrator() {
     if (phase === "night") await processNightResults();
 
     await update(ref(db, `games/${gameCode}/state`), { phase: newPhase });
+    
+    togglePhaseBtn.disabled = false; // 🔴 Riattiva il tasto a operazione finita
   });
 }
 
@@ -104,12 +108,12 @@ async function renderNarratorTable(phase, gameData) {
       if (roles.includes("Lupo") && p.gameRole !== "Lupo") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
-        chk.checked = (gameData.nightActions?.killed || []).includes(uid);
+        // 🔴 NUOVO: Lettura e scrittura sicura per evitare sovrascritture
+        chk.checked = !!(gameData.nightActions?.killed && gameData.nightActions.killed[uid]);
         chk.addEventListener("change", async () => {
-          let arr = gameData.nightActions?.killed || [];
-          arr = arr.filter(id => id !== uid);
-          if (chk.checked) arr.push(uid);
-          await update(ref(db, `games/${gameCode}/nightActions`), { killed: arr });
+          await update(ref(db, `games/${gameCode}/nightActions/killed`), { 
+            [uid]: chk.checked ? true : null 
+          });
         });
         li.append(" | Ucciso ", chk);
       }
@@ -119,6 +123,7 @@ async function renderNarratorTable(phase, gameData) {
         const chk = document.createElement("input");
         chk.type = "radio";
         chk.name = "puttana";
+        // Questa rimane uguale a prima (usa una stringa per salvare l'UID)
         chk.checked = gameData.nightActions?.saved === uid;
         chk.addEventListener("change", async () => {
           await update(ref(db, `games/${gameCode}/nightActions`), { saved: uid });
@@ -130,12 +135,12 @@ async function renderNarratorTable(phase, gameData) {
       if (roles.includes("Amante") && p.gameRole === "Amante") {
         const chk = document.createElement("input");
         chk.type = "checkbox";
-        chk.checked = (gameData.nightActions?.lovers || []).includes(uid);
+        // 🔴 QUI VA IL NUOVO CODICE DEGLI AMANTI
+        chk.checked = !!(gameData.nightActions?.lovers && gameData.nightActions.lovers[uid]);
         chk.addEventListener("change", async () => {
-          let arr = gameData.nightActions?.lovers || [];
-          arr = arr.filter(id => id !== uid);
-          if (chk.checked) arr.push(uid);
-          await update(ref(db, `games/${gameCode}/nightActions`), { lovers: arr });
+          await update(ref(db, `games/${gameCode}/nightActions/lovers`), { 
+            [uid]: chk.checked ? true : null 
+          });
         });
         li.append(" | Amante ", chk);
       }
@@ -194,14 +199,23 @@ async function processNightResults() {
   const playersSnap = await get(ref(db, `games/${gameCode}/players`));
   const players = playersSnap.val();
 
-  const killed = actions.killed || [];
+  // 🔴 NUOVO: Converte gli oggetti salvati in array di ID per mantenere la logica intatta
+  const killed = Object.keys(actions.killed || {});
   const saved = actions.saved || null;
-  const lovers = actions.lovers || [];
+  const lovers = Object.keys(actions.lovers || {});
   const muted = actions.muted || null;
 
   // Aggiorna lo stato dei giocatori
+  // Aggiorna lo stato dei giocatori
   for (let uid of killed) {
-    if (uid === saved) continue;
+    if (uid === saved) continue; // Salvato dalla puttana
+    
+    // 🔴 NUOVO CONTROLLO: Il Figlio del Lupo non muore, diventa Lupo!
+    if (players[uid].gameRole === "Figlio del Lupo") {
+      await update(ref(db, `games/${gameCode}/players/${uid}`), { gameRole: "Lupo" });
+      continue; // Passa al prossimo nella lista "killed" senza ucciderlo
+    }
+
     if (lovers.includes(uid)) {
       for (let l of lovers) {
         await update(ref(db, `games/${gameCode}/players/${l}`), { isAlive: false });
@@ -252,3 +266,4 @@ document.getElementById("end-game-btn").addEventListener("click", async () => {
   // Aggiorna lo stato partita
   await update(ref(db, `games/${gameCode}/state`), { status: "ended" });
 });
+
