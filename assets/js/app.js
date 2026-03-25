@@ -55,6 +55,15 @@ document.getElementById("join-game").addEventListener("click", async () => {
       return;
     }
 
+    const gameData = snapshot.val();
+    // 🔴 NUOVO CONTROLLO: Impedisci l'ingresso se la partita non è in attesa
+    if (gameData.state && gameData.state.status !== "waiting") {
+      alert("❌ Questa partita è già iniziata o terminata!");
+      return;
+    }
+
+    // Aggiunge il giocatore come guest
+
     // Aggiunge il giocatore come guest
     const playerRef = ref(db, `games/${gameCode.toUpperCase()}/players/${auth.currentUser.uid}`);
     await set(playerRef, { 
