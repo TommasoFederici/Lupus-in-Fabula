@@ -67,7 +67,8 @@ export function prompt(msg, {
   title        = null,
   icon         = '✍️',
   placeholder  = '',
-  defaultValue = ''
+  defaultValue = '',
+  validate     = null   // fn(value) → stringa errore | null
 } = {}) {
   return new Promise(resolve => {
     const box = document.createElement('div');
@@ -78,18 +79,33 @@ export function prompt(msg, {
       <p class="ui-dialog-msg">${msg}</p>
       <input class="ui-dialog-input" type="text"
              placeholder="${placeholder}" value="${defaultValue}" />
+      <p class="ui-input-error"></p>
       <div class="ui-dialog-actions">
         <button class="ui-btn ui-btn-primary">Continua</button>
         <button class="ui-btn ui-btn-secondary">Annulla</button>
       </div>`;
-    const input  = box.querySelector('input');
+    const input    = box.querySelector('input');
+    const errorEl  = box.querySelector('.ui-input-error');
     const [ok, cancel] = box.querySelectorAll('.ui-btn');
+
+    function checkValid() {
+      if (!validate) return true;
+      const err = validate(input.value.trim());
+      errorEl.textContent = err ?? '';
+      errorEl.style.display = err ? 'block' : 'none';
+      return !err;
+    }
+
     setTimeout(() => input.focus(), 40);
+    input.addEventListener('input', checkValid);
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter')  ok.click();
       if (e.key === 'Escape') cancel.click();
     });
-    ok.addEventListener('click',     () => _close(box, resolve, input.value.trim() || null));
+    ok.addEventListener('click', () => {
+      if (!checkValid()) return;
+      _close(box, resolve, input.value.trim() || null);
+    });
     cancel.addEventListener('click', () => _close(box, resolve, null));
     _show(box);
   });

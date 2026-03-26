@@ -106,6 +106,13 @@
   transition: border-color 0.15s;
 }
 .ui-dialog-input:focus { border-color: var(--gold); }
+.ui-input-error {
+  display: none;
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: #e06060;
+  text-align: left;
+}
 .ui-dialog-actions {
   display: flex;
   flex-direction: column;

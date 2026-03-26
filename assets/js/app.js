@@ -53,6 +53,11 @@ async function renderActiveGames() {
       continue;
     }
 
+    if (status === "closed") {
+      removeGame(gameCode);
+      continue;
+    }
+
     const statusLabel = { waiting: "In lobby", running: "In corso", ended: "Terminata" }[status] ?? status;
     const statusClass = { waiting: "status--waiting", running: "status--running", ended: "status--ended" }[status] ?? "";
     const isHost      = gameData.players[user.uid]?.role === "host";
@@ -177,25 +182,20 @@ document.getElementById("join-game").addEventListener("click", async () => {
     return;
   }
 
+  // Tutti i nomi già presi, incluso il narratore
   const existingNames = Object.values(gameData.players ?? {})
-    .filter(p => p.role !== "host")
     .map(p => p.name.trim().toLowerCase());
 
-  let playerName;
-  while (true) {
-    playerName = await ui.prompt("Come ti chiami?", {
-      icon: "🐺",
-      placeholder: "Il tuo nome…"
-    });
-    if (!playerName) return;
-    playerName = playerName.trim();
-    if (!playerName) continue;
-    if (existingNames.includes(playerName.toLowerCase())) {
-      await ui.alert(`Il nome "${playerName}" è già in uso in questa partita. Scegline un altro.`, { icon: "⚠️" });
-      continue;
+  const playerName = await ui.prompt("Come ti chiami?", {
+    icon: "🐺",
+    placeholder: "Il tuo nome…",
+    validate: (v) => {
+      if (!v) return null;
+      if (existingNames.includes(v.toLowerCase())) return `"${v}" è già in uso — scegli un altro nome.`;
+      return null;
     }
-    break;
-  }
+  });
+  if (!playerName) return;
 
   try {
     await set(ref(db, `games/${gameCode}/players/${user.uid}`), {

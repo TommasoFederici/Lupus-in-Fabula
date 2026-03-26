@@ -4,6 +4,7 @@ import {
   ref, onValue, get, update, push
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { ROLES, playerEsceNotte } from "./engine/roles.js";
+import { ROLE_DATA } from "./engine/roleData.js";
 import { processaNotte } from "./engine/nightEngine.js";
 import { formatLogEntry } from "./engine/eventLog.js";
 import * as ui from "./ui.js";
@@ -94,12 +95,18 @@ function setupPlayer() {
   const statusEl  = document.getElementById("player-status");
 
   function showRole() {
-    roleCard.textContent = currentPlayerData.gameRole ?? "???";
+    const nome  = currentPlayerData.gameRole ?? "???";
+    const dati  = ROLE_DATA[nome];
+    const emoji = ROLE_EMOJI[nome] ?? "";
+    const desc  = dati?.descrizioneLunga ?? dati?.descrizione ?? "";
+    roleCard.innerHTML = `
+      <div class="role-reveal-name">${emoji} ${nome}</div>
+      ${desc ? `<div class="role-reveal-desc">${desc}</div>` : ""}`;
     roleCard.classList.add("revealed");
     toggleBtn.classList.add("holding");
   }
   function hideRole() {
-    roleCard.textContent = "???";
+    roleCard.innerHTML = "???";
     roleCard.classList.remove("revealed");
     toggleBtn.classList.remove("holding");
   }

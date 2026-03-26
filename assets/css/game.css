@@ -93,6 +93,23 @@ button:active { transform: translateY(0); }
   border-color: var(--gold);
   box-shadow: var(--shadow-gold);
 }
+.role-reveal-name {
+  font-family: 'Cinzel', serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--gold);
+  margin-bottom: 0.6rem;
+}
+.role-reveal-desc {
+  font-family: 'Lora', serif;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--text-sec);
+  line-height: 1.55;
+  letter-spacing: 0;
+  font-weight: 400;
+}
 
 /* ── Player: status banner ──────────────────────────────────────────────────── */
 .status-banner {
