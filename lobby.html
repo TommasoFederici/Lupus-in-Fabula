@@ -8,42 +8,78 @@
   <link rel="stylesheet" href="assets/css/lobby.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Lobby</h1>
 
-    <h2>Giocatori</h2>
-    <div id="players-list"></div>
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header class="lobby-header">
+    <span class="lobby-title">Lobby</span>
+    <div id="game-code-bar" title="Tocca per copiare">
+      <span id="game-code">——</span>
+      <span class="code-copy-hint">⎘</span>
+    </div>
+  </header>
 
-    <h2>Ruoli</h2>
-    <div id="roles-list"></div>
+  <!-- ── Tab panels ─────────────────────────────────────────────────────── -->
+  <main class="tab-content">
 
-    <!-- Impostazioni partita (visibili solo all'host) -->
-    <div id="settings-section" style="display:none;">
-      <h2>Impostazioni</h2>
-      <label class="toggle-row">
-        <input type="checkbox" id="skip-first-night" />
-        <span class="toggle-label">Salta Prima Notte <span class="toggle-hint">(nessun ruolo agisce nella notte 1)</span></span>
-      </label>
-      <label class="toggle-row toggle-dev">
-        <input type="checkbox" id="dev-mode" />
-        <span class="toggle-label">Modalità Sviluppatore 🧪 <span class="toggle-hint">(aggiunge bot per testare senza giocatori reali)</span></span>
-      </label>
+    <div id="tab-players" class="tab-panel active">
+      <div id="players-list"></div>
+      <div id="dev-section" style="display:none;">
+        <button id="add-bot-btn">🤖 + Aggiungi Bot</button>
+      </div>
+      <button id="start-game-btn" style="display:none;">Inizia Partita</button>
     </div>
 
-    <!-- Dev Mode: pannello bot (visibile solo se devMode attivo) -->
-    <div id="dev-section" style="display:none;">
-      <h2>🧪 Dev Mode</h2>
-      <button id="add-bot-btn">🤖 + Aggiungi Bot</button>
+    <div id="tab-roles" class="tab-panel">
+      <div id="roles-list"></div>
+      <p id="roles-counter" class="roles-counter"></p>
     </div>
 
-    <button id="start-game-btn" style="display:none;">Inizia Partita</button>
-  </div>
+    <div id="tab-settings" class="tab-panel">
+      <div id="settings-section">
+        <label class="toggle-row">
+          <input type="checkbox" id="skip-first-night" />
+          <span class="toggle-label">Salta Prima Notte
+            <span class="toggle-hint">Nessun ruolo agisce nella notte 1</span>
+          </span>
+        </label>
+        <label class="toggle-row toggle-dev">
+          <input type="checkbox" id="dev-mode" />
+          <span class="toggle-label">Dev Mode 🧪
+            <span class="toggle-hint">Aggiunge bot per testare senza giocatori reali</span>
+          </span>
+        </label>
+      </div>
+    </div>
 
-  <!-- Among Us–style game code bar (fixed bottom) -->
-  <div id="game-code-bar">
-    <span class="code-label">Codice</span>
-    <span id="game-code"></span>
-    <span class="code-hint">tocca per copiare</span>
+  </main>
+
+  <!-- ── Bottom nav ─────────────────────────────────────────────────────── -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="players">
+      <span class="tab-icon">👥</span>
+      <span class="tab-label">Giocatori</span>
+    </button>
+    <button class="tab-btn" data-tab="roles">
+      <span class="tab-icon">⚔️</span>
+      <span class="tab-label">Ruoli</span>
+    </button>
+    <button class="tab-btn" id="tab-btn-settings" data-tab="settings" style="display:none;">
+      <span class="tab-icon">⚙️</span>
+      <span class="tab-label">Opzioni</span>
+    </button>
+  </nav>
+
+  <!-- ── Role wiki modal (full-screen) ──────────────────────────────────── -->
+  <div id="role-wiki-modal" class="wiki-modal" style="display:none;">
+    <div class="wiki-modal-header">
+      <button id="wiki-close-btn" class="wiki-back-btn">← Chiudi</button>
+      <span id="wiki-faction-badge" class="wiki-faction-badge"></span>
+    </div>
+    <div class="wiki-modal-title">
+      <span id="wiki-emoji" class="wiki-emoji"></span>
+      <h2 id="wiki-role-name"></h2>
+    </div>
+    <div id="wiki-modal-body" class="wiki-modal-body"></div>
   </div>
 
   <div id="ui-overlay"></div>
