@@ -88,7 +88,7 @@ auth.onAuthStateChanged(async (user) => {
 // PLAYER VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 function setupPlayer() {
-  document.getElementById("player-view").style.display = "block";
+  document.getElementById("player-view").style.display = "flex";
 
   const roleCard  = document.getElementById("role-card");
   const toggleBtn = document.getElementById("toggle-card");
@@ -121,6 +121,15 @@ function setupPlayer() {
   // Blocca il menu contestuale su mobile (long-press)
   toggleBtn.addEventListener("contextmenu", (e) => e.preventDefault());
 
+  // ── Wiki
+  document.getElementById("show-wiki-btn").addEventListener("click", () => {
+    showRoleWiki(currentPlayerData.gameRole);
+  });
+  document.getElementById("role-wiki-close").addEventListener("click", closeRoleWiki);
+  document.getElementById("role-wiki-modal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeRoleWiki();
+  });
+
   onValue(ref(db, `games/${gameCode}/players/${currentUser.uid}`), (snap) => {
     const p = snap.val();
     if (!p) return;
@@ -135,6 +144,86 @@ function setupPlayer() {
 
     // nessun aggiornamento live necessario: il ruolo è visibile solo mentre si tiene premuto
   });
+}
+
+// ── Wiki ruolo ────────────────────────────────────────────────────────────────
+const WIKI_DURATION = 10000;
+let _wikiTimer    = null;
+let _wikiRaf      = null;
+let _wikiTouching = false;
+let _wikiDeadline = 0;
+
+function _startWikiTimer() {
+  _clearWikiTimer();
+  if (_wikiTouching) return;
+  _wikiDeadline = performance.now() + WIKI_DURATION;
+  _wikiTimer    = setTimeout(() => closeRoleWiki(), WIKI_DURATION);
+  _tickWikiBar();
+}
+function _clearWikiTimer() {
+  if (_wikiTimer) { clearTimeout(_wikiTimer); _wikiTimer = null; }
+  if (_wikiRaf)   { cancelAnimationFrame(_wikiRaf); _wikiRaf = null; }
+}
+function _tickWikiBar() {
+  const fill = document.getElementById("wiki-timer-fill");
+  if (!fill) return;
+  const remaining = Math.max(0, _wikiDeadline - performance.now());
+  fill.style.width = (remaining / WIKI_DURATION * 100) + "%";
+  if (remaining > 0) _wikiRaf = requestAnimationFrame(_tickWikiBar);
+}
+function _pauseWikiBar() {
+  if (_wikiRaf) { cancelAnimationFrame(_wikiRaf); _wikiRaf = null; }
+  const fill = document.getElementById("wiki-timer-fill");
+  if (fill) fill.style.width = "100%";
+}
+
+function showRoleWiki(nomeRuolo) {
+  if (!nomeRuolo) return;
+  const dati  = ROLE_DATA[nomeRuolo];
+  const color = FACTION_COLOR[dati?.categoria] ?? "#e0a830";
+
+  const meccaniche = dati?.meccaniche?.length
+    ? `<ul class="wiki-meccaniche">${dati.meccaniche.map(m => `<li>${m}</li>`).join("")}</ul>`
+    : "";
+
+  const abilita = dati?.abilita?.length
+    ? `<div class="wiki-section-title">⚡ Abilità</div>` +
+      dati.abilita.map(a =>
+        `<div class="wiki-ability"><strong>${a.nome}</strong><span>${a.desc}</span></div>`
+      ).join("")
+    : "";
+
+  document.getElementById("role-wiki-content").innerHTML = `
+    ${dati?.descrizioneLunga ? `<p class="wiki-desc">${dati.descrizioneLunga}</p>` : ""}
+    ${meccaniche ? `<div class="wiki-section-title" style="color:${color}">📋 Come funziona</div>${meccaniche}` : ""}
+    ${abilita}
+  `;
+
+  const modal = document.getElementById("role-wiki-modal");
+  const box   = modal.querySelector("#role-wiki-box");
+  modal.style.display = "flex";
+  box.classList.remove("animate-out");
+  void box.offsetWidth;
+  box.classList.add("animate-in");
+
+  // Timer auto-chiusura: 10s, sospeso mentre si tiene il dito
+  _wikiTouching = false;
+  _startWikiTimer();
+  box.addEventListener("pointerdown",  () => { _wikiTouching = true;  _clearWikiTimer(); _pauseWikiBar(); }, { passive: true });
+  box.addEventListener("pointerup",    () => { _wikiTouching = false; _startWikiTimer(); }, { passive: true });
+  box.addEventListener("pointerleave", () => { _wikiTouching = false; _startWikiTimer(); }, { passive: true });
+}
+
+function closeRoleWiki() {
+  _clearWikiTimer();
+  const modal = document.getElementById("role-wiki-modal");
+  const box   = modal.querySelector("#role-wiki-box");
+  box.classList.remove("animate-in");
+  box.classList.add("animate-out");
+  box.addEventListener("animationend", () => {
+    modal.style.display = "none";
+    box.classList.remove("animate-out");
+  }, { once: true });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

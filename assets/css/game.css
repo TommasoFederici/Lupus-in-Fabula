@@ -59,6 +59,65 @@ button {
 button:hover  { transform: translateY(-2px); filter: brightness(1.1); }
 button:active { transform: translateY(0); }
 
+/* ── Player view layout — schermo intero, fuori dal container ─────────────────── */
+#player-view {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.player-top-bar {
+  padding: calc(0.8rem + env(safe-area-inset-top)) 1rem 0.4rem;
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.player-center {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.5rem;
+  text-align: center;
+  overflow: hidden;
+}
+.player-role-label {
+  font-family: 'Cinzel', serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.8rem;
+}
+.player-navbar {
+  flex-shrink: 0;
+  padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.player-navbar button {
+  width: 100%;
+}
+
+.btn-wiki {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-sec);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.9rem;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  width: auto;
+  display: inline-block;
+}
+.btn-wiki:hover { background: rgba(255,255,255,0.11); }
+
 #toggle-card {
   background: #3a5a8a;
   color: #e0ecff;
@@ -87,6 +146,10 @@ button:active { transform: translateY(0); }
   transition: transform 0.2s, border-color 0.2s;
   letter-spacing: 0.06em;
   color: var(--text-prim);
+  width: 100%;
+  box-sizing: border-box;
+  max-height: 100%;
+  overflow-y: auto;
 }
 #role-card:hover { transform: scale(1.04); }
 #role-card.revealed {
@@ -943,3 +1006,118 @@ button:active { transform: translateY(0); }
   background: rgba(80,160,200,0.08);
   border-color: rgba(80,160,200,0.2);
 }
+
+/* ── Role Wiki Modal ─────────────────────────────────────────────────────────── */
+#role-wiki-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.72);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+#role-wiki-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0 0 2rem;
+  position: relative;
+}
+.wiki-topbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.6rem 0.8rem 0;
+}
+#role-wiki-box.animate-in  { animation: slideUp 0.28s ease; }
+#role-wiki-box.animate-out { animation: slideDown 0.22s ease forwards; }
+@keyframes slideUp   { from { transform: translateY(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes slideDown { from { transform: none; opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
+
+#wiki-timer-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  overflow: hidden;
+}
+#wiki-timer-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--gold);
+  transition: none;
+  transform-origin: left;
+}
+
+#role-wiki-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  line-height: 1;
+  width: auto;
+  margin: 0;
+}
+#role-wiki-content {
+  padding: 0.4rem 1.2rem 0;
+}
+
+.wiki-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+.wiki-emoji  { font-size: 2.6rem; line-height: 1; }
+.wiki-title  { font-family: 'Cinzel', serif; font-size: 1.4rem; font-weight: 700; margin: 0.2rem 0 0; letter-spacing: 0.06em; }
+.wiki-faction { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; opacity: 0.85; }
+
+.wiki-desc {
+  font-size: 0.88rem;
+  font-style: italic;
+  color: var(--text-sec);
+  line-height: 1.6;
+  margin: 0 0 1rem;
+  border-left: 2px solid var(--border);
+  padding-left: 0.8rem;
+}
+.wiki-section-title {
+  font-family: 'Cinzel', serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 1rem 0 0.4rem;
+}
+.wiki-meccaniche {
+  margin: 0 0 0.4rem;
+  padding-left: 1.2rem;
+  font-size: 0.84rem;
+  color: var(--text-sec);
+  line-height: 1.6;
+}
+.wiki-meccaniche li { margin-bottom: 0.2rem; }
+.wiki-ability {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.4rem;
+}
+.wiki-ability strong { font-size: 0.85rem; color: var(--text-prim); }
+.wiki-ability span   { font-size: 0.8rem;  color: var(--text-sec);  }
