@@ -169,6 +169,27 @@ async function setupLobby() {
       window.location.href = "/";
     }
 
+    // Espulso dal narratore: il player non è più in lista
+    if (!isHost && !gameData.players?.[currentUser.uid]) {
+      window.location.href = "/";
+    }
+
+    // Bottone lascia partita (solo non-host)
+    const leaveBtn = document.getElementById("leave-lobby-btn");
+    if (leaveBtn) {
+      leaveBtn.style.display = isHost ? "none" : "block";
+      if (!leaveBtn.dataset.listener) {
+        leaveBtn.dataset.listener = "1";
+        leaveBtn.addEventListener("click", async () => {
+          if (!await ui.confirm("Lasciare la partita?", {
+            icon: "↩", confirmLabel: "Lascia"
+          })) return;
+          await remove(ref(db, `games/${gameCode}/players/${currentUser.uid}`));
+          window.location.href = "/";
+        });
+      }
+    }
+
     // Bottone chiudi lobby (solo host)
     const closeBtn = document.getElementById("close-lobby-btn");
     if (closeBtn) {
@@ -221,11 +242,12 @@ function renderPlayers(players, hostId, devMode) {
     nameSpan.textContent = text;
     div.appendChild(nameSpan);
 
-    if (isHost && p.isBot && devMode) {
+    // Host può espellere chiunque (non se stesso)
+    if (isHost && uid !== currentUser.uid) {
       const removeBtn = document.createElement("button");
       removeBtn.textContent = "✕";
       removeBtn.className = "btn-remove-bot";
-      removeBtn.addEventListener("click", () => removeBot(uid));
+      removeBtn.addEventListener("click", () => kickPlayer(uid, p.name));
       div.appendChild(removeBtn);
     }
 
@@ -245,6 +267,13 @@ async function addBot() {
 }
 
 async function removeBot(uid) {
+  await remove(ref(db, `games/${gameCode}/players/${uid}`));
+}
+
+async function kickPlayer(uid, name) {
+  if (!await ui.confirm(`Espellere ${name} dalla lobby?`, {
+    icon: "✕", confirmLabel: "Espelli", danger: true
+  })) return;
   await remove(ref(db, `games/${gameCode}/players/${uid}`));
 }
 
