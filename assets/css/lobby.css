@@ -329,11 +329,49 @@ body {
 .btn-count:hover { background: var(--bg-card); color: var(--gold); transform: none; filter: none; }
 
 .roles-counter {
-  margin: 0.7rem 0 0;
-  font-size: 0.78rem;
+  margin: 0 0 0.6rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-muted);
+  transition: color 0.2s, border-color 0.2s;
+}
+.roles-counter[data-state="ok"] {
+  color: #40c090;
+  border-color: rgba(64,192,144,0.35);
+  background: rgba(64,192,144,0.07);
+}
+.roles-counter[data-state="over"] {
+  color: #e06060;
+  border-color: rgba(220,80,80,0.35);
+  background: rgba(220,80,80,0.07);
+}
+
+.roles-counter-bar {
+  margin: 0.5rem 0;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.81rem;
+  font-weight: 600;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
   color: var(--text-muted);
   text-align: center;
-  font-style: italic;
+  transition: color 0.2s, border-color 0.2s;
+}
+.roles-counter-bar[data-state="ok"] {
+  color: #40c090;
+  border-color: rgba(64,192,144,0.35);
+  background: rgba(64,192,144,0.07);
+}
+.roles-counter-bar[data-state="over"] {
+  color: #e06060;
+  border-color: rgba(220,80,80,0.35);
+  background: rgba(220,80,80,0.07);
 }
 
 /* ── Wiki modal ──────────────────────────────────────────────────────────────── */

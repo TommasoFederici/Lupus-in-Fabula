@@ -88,8 +88,8 @@ document.getElementById("join-game").addEventListener("click", async () => {
     }
 
     const gameData = snapshot.val();
-    if (gameData.state?.status !== "waiting") {
-      await ui.alert("Questa partita è già iniziata o terminata.", { icon: "🚫" });
+    if (gameData.state?.status === "running") {
+      await ui.alert("Questa partita è già in corso.", { icon: "🚫" });
       return;
     }
 

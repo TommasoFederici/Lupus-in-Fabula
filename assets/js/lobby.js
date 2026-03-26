@@ -18,6 +18,7 @@ const gameRef = ref(db, `games/${gameCode}`);
 
 let currentUser = null;
 let isHost      = false;
+let playerCount = 0;
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -187,6 +188,7 @@ function renderPlayers(players, hostId, devMode) {
   const container = document.getElementById("players-list");
   if (!container) return;
   container.innerHTML = "";
+  playerCount = Object.values(players).filter(p => p.role !== "host").length;
 
   Object.entries(players).forEach(([uid, p]) => {
     const div = document.createElement("div");
@@ -353,14 +355,32 @@ function renderRoleCounts(dbRoles) {
 }
 
 function updateRolesCounter() {
-  const counter = document.getElementById("roles-counter");
-  if (!counter) return;
   let total = 0;
   Object.values(ROLES).forEach(r => {
     const el = document.getElementById(`role-count-${r.nome}`);
     if (el) total += parseInt(el.textContent) || 0;
   });
-  counter.textContent = total > 0 ? `${total} ruoli assegnati` : "Nessun ruolo selezionato";
+
+  const match = playerCount > 0 && total === playerCount;
+  const over  = total > playerCount && playerCount > 0;
+  const state = match ? "ok" : over ? "over" : "pending";
+
+  const label = playerCount > 0
+    ? `${total} / ${playerCount} ruoli`
+    : total > 0 ? `${total} ruoli selezionati` : "Nessun ruolo selezionato";
+
+  const top = document.getElementById("roles-counter");
+  if (top) {
+    top.textContent = label;
+    top.dataset.state = state;
+  }
+
+  const bar = document.getElementById("roles-counter-bar");
+  if (bar) {
+    bar.textContent = playerCount > 0 ? `⚔️ Ruoli: ${total} / ${playerCount}` : "";
+    bar.dataset.state = state;
+    bar.style.display = playerCount > 0 ? "block" : "none";
+  }
 }
 
 // ── Start game ────────────────────────────────────────────────────────────────

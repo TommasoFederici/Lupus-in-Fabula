@@ -141,6 +141,13 @@ function setupNarrator() {
     updateUndoBtn();
   });
   updateUndoBtn();
+
+  // Copy log button (solo host)
+  const copyLogBtn = document.getElementById("copy-log-btn");
+  if (copyLogBtn) {
+    copyLogBtn.style.display = isHost ? "inline-flex" : "none";
+    copyLogBtn.addEventListener("click", copyLogToClipboard);
+  }
 }
 
 function renderNarratorView(gameData) {
@@ -657,7 +664,8 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
       });
     } else {
       await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: singleValue });
-      pushUndo(`${ctrl.label} → ${singleValue ?? "Nessuno"}`, async () => {
+      const targetName = singleValue ? (players[singleValue]?.name ?? singleValue) : "Nessuno";
+      pushUndo(`${ctrl.label} → ${targetName}`, async () => {
         await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: prev });
         await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
         showFeedback(null); refreshBtn();
@@ -1048,8 +1056,9 @@ async function handleMandaAlRogo(uid, players) {
   })) return;
 
   await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: false, isMuted: false });
+  const _giorno = (lastGameData?.state?.nightNumber ?? 2) - 1;
   await push(ref(db, `games/${gameCode}/log`), {
-    tipo: "morte_giorno", uid, timestamp: Date.now()
+    tipo: "morte_giorno", uid, giorno: _giorno, timestamp: Date.now()
   });
 
   // Effetti passivi (Kamikaze, Folle...)
@@ -1077,7 +1086,8 @@ async function handlePassiveEffects(evento, giocatori) {
   }
 
   if (Object.keys(fbUpdates).length) await update(ref(db), fbUpdates);
-  for (const e of evLog) await push(ref(db, `games/${gameCode}/log`), e);
+  const _giornoPassivo = (lastGameData?.state?.nightNumber ?? 2) - 1;
+  for (const e of evLog) await push(ref(db, `games/${gameCode}/log`), { ...e, giorno: _giornoPassivo });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1146,23 +1156,138 @@ function closeSummaryModal() {
 // ──────────────────────────────────────────────────────────────────────────────
 // EVENT LOG
 // ──────────────────────────────────────────────────────────────────────────────
+// ── Colori per tipo evento ─────────────────────────────────────────────────
+const LOG_TIPO_COLOR = {
+  morte_notte:                    "#c84050",
+  attacco_lupo:                   "#c84050",
+  boia_esecuzione:                "#c84050",
+  giustiziere_esecuzione:         "#d05060",
+  mannaro_caccia:                 "#d4884a",
+  morte_giorno:                   "#e07030",
+  kamikaze_vendetta:              "#e0a030",
+  amante_muore:                   "#d060a0",
+  figlio_diventa_lupo:            "#b070d0",
+  mitomane_copia:                 "#a080c0",
+  puttana_salvataggio_effettivo:  "#40b880",
+  angelo_resurrezione:            "#40b880",
+  veggente_risposta:              "#4080e0",
+  investigatore_risposta:         "#4080e0",
+  medium_risposta:                "#7070c0",
+  missPurple_risposta:            "#a060c0",
+  lupoCieco_risposta:             "#c04060",
+  bugiardo_risposta:              "#c06080",
+  sciamano_maledizione:           "#8060c0",
+  muto_silenzia:                  "#806080",
+  parassita_infetta:              "#88cc44",
+  folle_vince:                    "#a0c040",
+  bloccato_da_illusionista:       "#6080a0",
+};
+
+function _inferPhase(e) {
+  if (e.notte  != null) return { tipo: "notte",  numero: e.notte };
+  if (e.giorno != null) return { tipo: "giorno", numero: e.giorno };
+  const dayTypes = ["morte_giorno", "kamikaze_vendetta", "folle_vince"];
+  return dayTypes.includes(e.tipo)
+    ? { tipo: "giorno", numero: 0 }
+    : { tipo: "notte",  numero: 0 };
+}
+
+function _phaseScore(fase) {
+  // Notte N = N*2-1, Giorno N = N*2  → sort descending = most recent first
+  return fase.numero * 2 + (fase.tipo === "giorno" ? 0 : -1);
+}
+
+function _phaseKey(fase) { return `${fase.tipo}:${fase.numero}`; }
+
 function renderEventLog(log, giocatori) {
   const container = document.getElementById("event-log");
-  const entries   = Object.values(log)
-    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-    .slice(0, 50);
+  const allEvents = Object.values(log);
 
-  if (entries.length === 0) {
+  if (allEvents.length === 0) {
     container.innerHTML = "<p class='empty-msg'>Nessun evento ancora.</p>";
     return;
   }
 
-  container.innerHTML = entries.map(e => {
-    const time = e.timestamp
-      ? new Date(e.timestamp).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
-      : "--:--";
-    return `<div class="log-entry"><span class="log-time">${time}</span> ${formatLogEntry(e, giocatori)}</div>`;
+  // Raggruppa per fase
+  const phaseMap = new Map();
+  for (const e of allEvents) {
+    const fase = _inferPhase(e);
+    const key  = _phaseKey(fase);
+    if (!phaseMap.has(key)) phaseMap.set(key, { fase, events: [] });
+    phaseMap.get(key).events.push(e);
+  }
+
+  // Ordina fasi: più recente in cima
+  const phases = [...phaseMap.values()]
+    .sort((a, b) => _phaseScore(b.fase) - _phaseScore(a.fase));
+
+  container.innerHTML = phases.map(({ fase, events }) => {
+    const label = fase.tipo === "notte"
+      ? `🌙 Notte ${fase.numero}`
+      : `☀️ Giorno ${fase.numero}`;
+    const color = fase.tipo === "notte" ? "#8080c0" : "#c0a040";
+
+    // All'interno della fase: ordine cronologico inverso (più recente in cima)
+    const sorted = [...events].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+
+    const rows = sorted.map(e => {
+      const time    = e.timestamp
+        ? new Date(e.timestamp).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
+        : "--:--";
+      const entryColor = LOG_TIPO_COLOR[e.tipo] ?? "var(--text-sec)";
+      return `<div class="log-entry" style="border-left-color:${entryColor}">
+        <span class="log-time">${time}</span>
+        <span style="color:${entryColor}">${formatLogEntry(e, giocatori)}</span>
+      </div>`;
+    }).join("");
+
+    return `<div class="log-phase">
+      <div class="log-phase-header" style="color:${color}">${label}</div>
+      ${rows}
+    </div>`;
   }).join("");
+}
+
+// ── Copia Log per WhatsApp ────────────────────────────────────────────────────
+async function copyLogToClipboard() {
+  const log       = lastGameData?.log     ?? {};
+  const giocatori = lastGameData?.players ?? {};
+  const allEvents = Object.values(log);
+
+  if (allEvents.length === 0) {
+    ui.toast("Nessun evento da copiare.");
+    return;
+  }
+
+  const phaseMap = new Map();
+  for (const e of allEvents) {
+    const fase = _inferPhase(e);
+    const key  = _phaseKey(fase);
+    if (!phaseMap.has(key)) phaseMap.set(key, { fase, events: [] });
+    phaseMap.get(key).events.push(e);
+  }
+
+  const phases = [...phaseMap.values()]
+    .sort((a, b) => _phaseScore(b.fase) - _phaseScore(a.fase));
+
+  const lines = ["*🐺 LUPUS IN FABULA - LOG PARTITA 🐺*", ""];
+
+  for (const { fase, events } of phases) {
+    const label = fase.tipo === "notte" ? `*🌙 NOTTE ${fase.numero}*` : `*☀️ GIORNO ${fase.numero}*`;
+    lines.push(label);
+    const sorted = [...events].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    for (const e of sorted) {
+      lines.push(`- ${formatLogEntry(e, giocatori)}`);
+    }
+    lines.push("");
+  }
+
+  try {
+    await navigator.clipboard.writeText(lines.join("\n"));
+    ui.toast("✓ Log copiato!");
+  } catch {
+    ui.toast("Errore durante la copia.");
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
