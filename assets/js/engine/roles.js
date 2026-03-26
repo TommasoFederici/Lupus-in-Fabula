@@ -153,20 +153,19 @@ export const ROLES = {
     attivoGiorno: false,
     defaultCount: 1,
 
-    controlliNotte(giocatori) {
+    controlliNotte() {
       return [{
         tipo: "radio",
         label: "Investiga",
-        chiaveAzione: "visto",
+        chiaveAzione: "investigated",
         filtroTarget: (p) => p.isAlive
       }];
     },
 
     processaNotte(azioni, giocatori, stato) {
-      const uid = azioni.visto;
+      const uid = azioni.investigated;
       if (!uid) return { aggiornamenti: [], logEventi: [] };
       const target = giocatori[uid];
-      // _sciamanoMaledetto è già applicato allo stateLocale dal lupoSciamano (priorità 10)
       const isLupo = target._sciamanoMaledetto
         ? true
         : ["Lupo", "Lupo Sciamano"].includes(target.gameRole);
@@ -195,17 +194,17 @@ export const ROLES = {
     attivoGiorno: false,
     defaultCount: 0,
 
-    controlliNotte(giocatori) {
+    controlliNotte() {
       return [{
         tipo: "radio",
         label: "Sorveglia",
-        chiaveAzione: "indagato",
+        chiaveAzione: "watched",
         filtroTarget: (p) => p.gameRole !== "Investigatore" && p.isAlive
       }];
     },
 
     processaNotte(azioni, giocatori, stato) {
-      const uid = azioni.indagato;
+      const uid = azioni.watched;
       if (!uid) return { aggiornamenti: [], logEventi: [] };
       const esce = playerEsceNotte(uid, giocatori[uid], azioni, stato);
       return {
@@ -270,17 +269,17 @@ export const ROLES = {
       return [{
         tipo: "select-ruolo",
         label: "Copia ruolo",
-        chiaveAzione: "mitomaneRole"
+        chiaveAzione: "copied"
       }];
     },
 
     processaNotte(azioni, giocatori, stato) {
-      if (stato.nightNumber !== 1 || !azioni.mitomaneRole) return { aggiornamenti: [], logEventi: [] };
+      if (stato.nightNumber !== 1 || !azioni.copied) return { aggiornamenti: [], logEventi: [] };
       const mitUid = Object.keys(giocatori).find(uid => giocatori[uid].gameRole === "Mitomane");
       if (!mitUid) return { aggiornamenti: [], logEventi: [] };
       return {
-        aggiornamenti: [{ uid: mitUid, campi: { gameRole: azioni.mitomaneRole } }],
-        logEventi: [{ tipo: "mitomane_copia", nuovoRuolo: azioni.mitomaneRole, notte: stato.nightNumber, timestamp: Date.now() }]
+        aggiornamenti: [{ uid: mitUid, campi: { gameRole: azioni.copied } }],
+        logEventi: [{ tipo: "mitomane_copia", nuovoRuolo: azioni.copied, notte: stato.nightNumber, timestamp: Date.now() }]
       };
     },
 

@@ -16,6 +16,21 @@ let currentUser       = null;
 let isHost            = false;
 let currentPlayerData = null;
 
+// ── Wizard state (notte) ───────────────────────────────────────────────────
+let wizardStep      = 0;
+let lastNightNumber = -1;
+let lastGameData    = null;
+let wizardRuoli     = [];
+
+const ROLE_EMOJI = {
+  "Lupo": "🐺", "Lupo Sciamano": "🔮", "Figlio del Lupo": "🌕",
+  "Contadino": "🌾", "Veggente": "🔭", "Puttana": "🏠",
+  "Investigatore": "🕵️", "Muto": "🤐", "Prete": "✝️",
+  "Kamikaze": "💥", "Amante": "💘", "Mitomane": "🎭",
+  "Folle": "🃏", "Corvo": "🐦‍⬛"
+};
+const FACTION_COLOR = { lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0" };
+
 // ── Safe mode: stack annulla ultima azione ─────────────────────────────────
 // Ogni entry: { descrizione: string, applica: async () => void }
 let undoStack = [];
@@ -118,9 +133,17 @@ function setupNarrator() {
 }
 
 function renderNarratorView(gameData) {
+  lastGameData = gameData;
+
   const phase       = gameData.state?.phase        ?? "night";
   const nightNumber = gameData.state?.nightNumber   ?? 1;
   const skipFirst   = gameData.state?.skipFirstNight ?? false;
+
+  // Reset wizard step quando inizia una nuova notte
+  if (nightNumber !== lastNightNumber) {
+    wizardStep      = 0;
+    lastNightNumber = nightNumber;
+  }
 
   document.getElementById("phase-indicator").textContent =
     phase === "night" ? `🌙 Notte ${nightNumber}` : `☀️ Giorno ${nightNumber - 1}`;
@@ -143,7 +166,7 @@ function renderNarratorView(gameData) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// NIGHT DASHBOARD
+// NIGHT WIZARD — un ruolo alla volta
 // ──────────────────────────────────────────────────────────────────────────────
 function renderNightDashboard(gameData, skipFirst) {
   const container = document.getElementById("night-dashboard");
@@ -153,112 +176,139 @@ function renderNightDashboard(gameData, skipFirst) {
   const players       = gameData.players      ?? {};
   const stato         = gameData.state        ?? {};
   const rolesDB       = gameData.roles        ?? {};
+  const tempFeedback  = gameData.tempFeedback ?? {};
+  const devMode       = stato.devMode ?? false;
   const nomiAttivi    = Object.keys(rolesDB).filter(n => (rolesDB[n]?.count ?? 0) > 0);
   const activePlayers = Object.entries(players).filter(([, p]) => p.role !== "host" && p.isAlive);
 
   if (skipFirst && (stato.nightNumber ?? 1) === 1) {
-    const banner = document.createElement("div");
-    banner.className = "skip-night-banner";
-    banner.innerHTML = "🌙 Prima notte: <strong>silenzio assoluto</strong>.<br>Premi <em>Alba</em> per proseguire.";
-    container.appendChild(banner);
+    container.innerHTML = `<div class="skip-night-banner">
+      🌙 Prima notte: <strong>silenzio assoluto</strong>.<br>
+      Premi <em>Alba</em> per proseguire.</div>`;
     return;
   }
 
-  const ruoliNotte = Object.values(ROLES)
+  wizardRuoli = Object.values(ROLES)
     .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
     .sort((a, b) => a.prioritaNotte - b.prioritaNotte);
 
-  if (ruoliNotte.length === 0) {
+  if (wizardRuoli.length === 0) {
     container.innerHTML = "<p class='empty-msg'>Nessun ruolo attivo questa notte.</p>";
     return;
   }
 
-  const devMode = gameData.state?.devMode ?? false;
+  if (wizardStep >= wizardRuoli.length) wizardStep = wizardRuoli.length - 1;
 
-  ruoliNotte.forEach((ruolo, i) => {
-    const giocatoriMap    = Object.fromEntries(activePlayers);
-    const playersWithRole = activePlayers.filter(([, p]) => p.gameRole === ruolo.nome);
-    const playerNames     = playersWithRole.map(([, p]) => p.name).join(", ");
-    const pendente        = isRolePendente(ruolo, azioni, activePlayers, stato);
-    const botHasRole      = activePlayers.some(([, p]) => p.gameRole === ruolo.nome && p.isBot);
+  const ruolo         = wizardRuoli[wizardStep];
+  const total         = wizardRuoli.length;
+  const roleColor     = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
+  const emoji         = ROLE_EMOJI[ruolo.nome] ?? "•";
+  const giocatoriMap  = Object.fromEntries(activePlayers);
+  const controlli     = ruolo.controlliNotte(giocatoriMap, azioni, stato);
+  const playersChips  = activePlayers
+    .filter(([, p]) => p.gameRole === ruolo.nome)
+    .map(([, p]) => `<span class="wiz-chip">${p.name}</span>`)
+    .join("");
 
-    const card = document.createElement("div");
-    card.className = "dashboard-step";
+  // ── Dots di progresso
+  const dots = wizardRuoli.map((_, i) => {
+    const cls = i < wizardStep ? "wiz-dot done" : i === wizardStep ? "wiz-dot active" : "wiz-dot";
+    return `<span class="${cls}"></span>`;
+  }).join("");
 
-    const header = document.createElement("div");
-    header.className = "step-header";
-    header.innerHTML = `
-      <span class="step-number">${i + 1}</span>
-      <span class="step-title">
-        Chiama: <strong>${ruolo.nome}</strong>
-        ${playerNames
-          ? `<span class="step-players">${playerNames}</span>`
-          : `<span class="step-count">(nessuno)</span>`}
-        ${pendente ? '<span class="badge-pending">● Pendente</span>' : ''}
-        ${devMode && botHasRole ? '<span class="badge-bot-role">🤖</span>' : ''}
-      </span>
-      <span class="step-toggle">▼</span>`;
+  const card = document.createElement("div");
+  card.className = "wizard-card";
+  card.innerHTML = `
+    <div class="wiz-progress">
+      <div class="wiz-dots">${dots}</div>
+      <span class="wiz-step-lbl">Passo ${wizardStep + 1} / ${total}</span>
+    </div>
+    <div class="wiz-role-header">
+      <span class="wiz-role-emoji">${emoji}</span>
+      <h2 class="wiz-role-title" style="color:${roleColor}">${ruolo.nome.toUpperCase()}</h2>
+    </div>
+    ${playersChips
+      ? `<div class="wiz-players-box">
+           <span class="wiz-players-lbl">👁 Possono aprire gli occhi</span>
+           <div class="wiz-chips">${playersChips}</div>
+         </div>`
+      : `<p class="wiz-no-players">Nessuno con questo ruolo in partita.</p>`}`;
 
-    const body = document.createElement("div");
-    body.className = "step-body";
-
-    const controlli = ruolo.controlliNotte(giocatoriMap, azioni, stato);
-    if (controlli?.length) {
-      controlli.forEach(ctrl => {
-        const el = buildControl(ctrl, activePlayers, azioni, rolesDB, ruolo, giocatoriMap, stato);
-        if (el) body.appendChild(el);
-      });
-    } else {
-      body.innerHTML = "<p class='no-action'>Nessuna azione richiesta.</p>";
+  // ── Controlli azione
+  const ctrlDiv = document.createElement("div");
+  ctrlDiv.className = "wiz-controls";
+  if (controlli?.length) {
+    for (const ctrl of controlli) {
+      ctrlDiv.appendChild(
+        buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players, stato, tempFeedback)
+      );
     }
-
-    // Pulsante "Scelta Casuale Bot" — visibile solo in dev mode se c'è un bot con questo ruolo
-    if (devMode && botHasRole) {
-      const botBtn = document.createElement("button");
-      botBtn.className = "btn-bot-random";
-      botBtn.textContent = "🎲 Scelta Casuale Bot";
-      botBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        fillBotAction(ruolo, azioni, activePlayers, rolesDB, stato);
-      });
-      body.appendChild(botBtn);
-    }
-
-    header.addEventListener("click", () => {
-      const open = body.classList.toggle("open");
-      header.querySelector(".step-toggle").textContent = open ? "▲" : "▼";
-    });
-
-    card.append(header, body);
-    container.appendChild(card);
-  });
-}
-
-// Un ruolo è "pendente" se ha almeno un controllo non-opzionale senza valore
-function isRolePendente(ruolo, azioni, activePlayers, stato) {
-  const giocatoriMap = Object.fromEntries(activePlayers);
-  const controlli    = ruolo.controlliNotte(giocatoriMap, azioni, stato);
-  if (!controlli?.length) return false;
-
-  for (const ctrl of controlli) {
-    if (ctrl.opzionale) continue;
-
-    const targets = ctrl.filtroTarget
-      ? activePlayers.filter(([, p]) => ctrl.filtroTarget(p))
-      : activePlayers;
-    if (targets.length === 0) continue;
-
-    if (ctrl.tipo === "checkbox-multi") {
-      if (!azioni[ctrl.chiaveAzione] || Object.keys(azioni[ctrl.chiaveAzione]).length === 0) return true;
-    } else if (ctrl.tipo === "radio" || ctrl.tipo === "select-ruolo") {
-      if (!azioni[ctrl.chiaveAzione]) return true;
-    }
+  } else {
+    ctrlDiv.innerHTML = "<p class='no-action'>Nessuna azione richiesta.</p>";
   }
-  return false;
+  card.appendChild(ctrlDiv);
+
+  // ── Bot random (dev mode)
+  if (devMode && activePlayers.some(([, p]) => p.gameRole === ruolo.nome && p.isBot)) {
+    const botBtn = document.createElement("button");
+    botBtn.className = "btn-bot-random";
+    botBtn.textContent = "🎲 Scelta Casuale Bot";
+    botBtn.addEventListener("click", () => fillBotAction(ruolo, azioni, activePlayers, rolesDB, stato));
+    card.appendChild(botBtn);
+  }
+
+  // ── Navigazione
+  const nav = document.createElement("div");
+  nav.className = "wiz-nav";
+
+  if (wizardStep > 0) {
+    const backBtn = document.createElement("button");
+    backBtn.className = "wiz-btn wiz-btn-back";
+    backBtn.textContent = "← Indietro";
+    backBtn.addEventListener("click", () => {
+      wizardStep--;
+      renderNightDashboard(lastGameData, skipFirst);
+    });
+    nav.appendChild(backBtn);
+  }
+
+  const skipBtn = document.createElement("button");
+  skipBtn.className = "wiz-btn wiz-btn-skip";
+  skipBtn.textContent = "Salta";
+  skipBtn.addEventListener("click", async () => {
+    if (controlli?.length) {
+      const upd = {};
+      for (const ctrl of controlli) {
+        ctrl.tipo === "checkbox-multi"
+          ? await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), null)
+          : (upd[ctrl.chiaveAzione] = null);
+      }
+      if (Object.keys(upd).length) await update(ref(db, `games/${gameCode}/nightActions`), upd);
+    }
+    await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
+    if (wizardStep < wizardRuoli.length - 1) {
+      wizardStep++;
+      renderNightDashboard(lastGameData, skipFirst);
+    }
+  });
+  nav.appendChild(skipBtn);
+
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "wiz-btn wiz-btn-next";
+  nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Tutti i ruoli completati";
+  nextBtn.addEventListener("click", () => {
+    if (wizardStep < wizardRuoli.length - 1) {
+      wizardStep++;
+      renderNightDashboard(lastGameData, skipFirst);
+    }
+  });
+  nav.appendChild(nextBtn);
+
+  card.appendChild(nav);
+  container.appendChild(card);
 }
 
-// Costruisce un controllo UI dal descrittore del ruolo
-// Sentinel per distinguere "annullato" da "nessuno scelto intenzionalmente"
+// ── Sentinel picker cancelled ─────────────────────────────────────────────────
 const PICKER_CANCELLED = {};
 
 // ── Player/role picker bottom sheet ──────────────────────────────────────────
@@ -273,7 +323,6 @@ function openPicker({ title, entries, multi, selectedKeys, optional }) {
 
     titleEl.textContent = title;
     const selected = new Set(Array.isArray(selectedKeys) ? selectedKeys : []);
-
     const allEntries = optional
       ? [{ id: "__none__", label: "Nessuno", isNone: true }, ...entries]
       : entries;
@@ -324,55 +373,8 @@ function openPicker({ title, entries, multi, selectedKeys, optional }) {
   });
 }
 
-// ── Night result computation ──────────────────────────────────────────────────
-// "Live": calcola con il valore appena selezionato (prima del round-trip Firebase).
-function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stato) {
-  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
-    if (!newValue) return null;
-    const target = players[newValue];
-    if (!target) return null;
-    const isCursed   = azioni["cursed"] === newValue;
-    const targetRole = Object.values(ROLES).find(r => r.nome === target.gameRole);
-    const isLupo     = targetRole?.fazione === "lupi" || isCursed;
-    return isLupo
-      ? { text: `🐺 ${target.name} è un Lupo`,    tipo: "danger",  icon: "🐺" }
-      : { text: `✓ ${target.name} è Innocente`,   tipo: "ok",      icon: "✅" };
-  }
-
-  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
-    if (!newValue) return null;
-    const target = players[newValue];
-    if (!target) return null;
-    const esceNotte = playerEsceNotte(newValue, target, {
-      saved:  azioni["saved"]  ?? null,
-      lovers: azioni["lovers"] ?? {},
-    }, stato ?? {});
-    return esceNotte
-      ? { text: `🚶 ${target.name} è uscito di casa`,  tipo: "warning", icon: "🚶" }
-      : { text: `🏠 ${target.name} è rimasto in casa`, tipo: "ok",      icon: "🏠" };
-  }
-
-  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied") {
-    if (!newValue) return null;
-    return { text: `🎭 Copia il ruolo: ${newValue}`, tipo: "info", icon: "🎭" };
-  }
-
-  return null;
-}
-
-// "Statica": legge da azioni già salvate (per il box nel re-render).
-function computeNightResult(ruolo, ctrl, azioni, players, stato) {
-  const key =
-    ruolo.nome === "Veggente"     && ctrl.chiaveAzione === "investigated" ? "investigated" :
-    ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched"      ? "watched"      :
-    ruolo.nome === "Mitomane"     && ctrl.chiaveAzione === "copied"       ? "copied"       :
-    null;
-  if (!key) return null;
-  return computeNightResultForValue(ruolo, ctrl, azioni[key], players, azioni, stato);
-}
-
-// ── buildControl — mobile-friendly (picker sheet) ─────────────────────────────
-function buildControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players, stato) {
+// ── Wizard control ────────────────────────────────────────────────────────────
+function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players, stato, tempFeedback) {
   const wrapper = document.createElement("div");
   wrapper.className = "control-group";
 
@@ -385,25 +387,20 @@ function buildControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players, stat
     ? activePlayers.filter(([, p]) => ctrl.filtroTarget(p))
     : activePlayers;
 
-  // Testo corrente della selezione
   function currentDisplay() {
     if (ctrl.tipo === "checkbox-multi") {
       const keys = Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k]);
-      if (!keys.length) return null;
-      return keys.map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ");
+      return keys.length ? keys.map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ") : null;
     }
     if (ctrl.tipo === "radio") {
       const uid = azioni[ctrl.chiaveAzione];
-      if (!uid) return ctrl.opzionale ? "Nessuno" : null;
-      return activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid;
+      return uid ? (activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid) : (ctrl.opzionale ? "Nessuno" : null);
     }
-    if (ctrl.tipo === "select-ruolo") {
-      return azioni[ctrl.chiaveAzione] ?? null;
-    }
+    if (ctrl.tipo === "select-ruolo") return azioni[ctrl.chiaveAzione] ?? null;
     return null;
   }
 
-  // Bottone selezione
+  // Bottone picker
   const selectBtn = document.createElement("button");
   selectBtn.className = "ctrl-select-btn";
   function refreshBtn() {
@@ -414,80 +411,157 @@ function buildControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players, stat
   }
   refreshBtn();
 
+  // Feedback box (persistente da tempFeedback Firebase)
+  const feedbackDiv = document.createElement("div");
+  feedbackDiv.className = "wiz-feedback";
+  function showFeedback(res) {
+    feedbackDiv.innerHTML = res
+      ? `<div class="result-box result-${res.tipo}"><span class="res-icon">${res.icon ?? ""}</span>${res.text}</div>`
+      : "";
+  }
+  showFeedback(getTempFeedbackResult(ruolo, ctrl, tempFeedback, players));
+
   selectBtn.addEventListener("click", async () => {
     let entries, multi;
-
     if (ctrl.tipo === "select-ruolo") {
       entries = Object.keys(rolesDB)
         .filter(n => n !== "Mitomane" && (rolesDB[n]?.count ?? 0) > 0)
         .map(nome => ({ id: nome, label: nome }));
       multi = false;
     } else {
-      entries = targets.map(([uid, p]) => ({
-        id: uid, label: p.name, sublabel: p.isBot ? "🤖 Bot" : null
-      }));
+      entries = targets.map(([uid, p]) => ({ id: uid, label: p.name, sublabel: p.isBot ? "🤖 Bot" : null }));
       multi = ctrl.tipo === "checkbox-multi";
     }
+    const currentKeys = ctrl.tipo === "checkbox-multi"
+      ? Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k])
+      : azioni[ctrl.chiaveAzione] ? [azioni[ctrl.chiaveAzione]] : [];
 
-    const currentKeys =
-      ctrl.tipo === "checkbox-multi"
-        ? Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k])
-        : azioni[ctrl.chiaveAzione] ? [azioni[ctrl.chiaveAzione]] : [];
+    const picked = await openPicker({ title: ctrl.label, entries, multi, selectedKeys: currentKeys, optional: !!ctrl.opzionale });
+    if (picked === PICKER_CANCELLED) return;
 
-    const result = await openPicker({
-      title: ctrl.label, entries, multi,
-      selectedKeys: currentKeys,
-      optional: !!ctrl.opzionale
-    });
-
-    if (result === PICKER_CANCELLED) return;
-
-    const prev = azioni[ctrl.chiaveAzione] ?? null;
-
-    // Calcola risposta PRIMA del salvataggio, col valore appena scelto
-    const singleValue = ctrl.tipo !== "checkbox-multi" ? (result ?? null) : null;
+    const prev        = azioni[ctrl.chiaveAzione] ?? null;
+    const singleValue = ctrl.tipo !== "checkbox-multi" ? (picked ?? null) : null;
     const liveResult  = singleValue !== null
       ? computeNightResultForValue(ruolo, ctrl, singleValue, players, azioni, stato)
       : null;
 
     if (ctrl.tipo === "checkbox-multi") {
       const newVal = {};
-      if (result instanceof Set) {
-        result.forEach(uid => { newVal[uid] = true; });
-        currentKeys.forEach(uid => { if (!result.has(uid)) newVal[uid] = null; });
+      if (picked instanceof Set) {
+        picked.forEach(uid => { newVal[uid] = true; });
+        currentKeys.forEach(uid => { if (!picked.has(uid)) newVal[uid] = null; });
       }
       await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), newVal);
-      const names = result instanceof Set && result.size > 0
-        ? [...result].map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ")
+      const names = picked instanceof Set && picked.size > 0
+        ? [...picked].map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ")
         : "Nessuno";
       pushUndo(`${ctrl.label}: ${names}`, async () => {
         await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), prev ?? {});
+        await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
+        showFeedback(null); refreshBtn();
       });
     } else {
       await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: singleValue });
       pushUndo(`${ctrl.label} → ${singleValue ?? "Nessuno"}`, async () => {
         await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: prev });
+        await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
+        showFeedback(null); refreshBtn();
       });
     }
 
-    // Mostra la risposta come modale subito dopo la conferma
+    // Scrivi tempFeedback su Firebase per persistenza dopo reload
     if (liveResult) {
-      await ui.alert(liveResult.text, { icon: liveResult.icon, title: "Risposta" });
+      const fbPayload = buildTempFeedbackPayload(ruolo, ctrl, singleValue, liveResult);
+      if (fbPayload) await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: fbPayload });
     }
+
+    // Mostra feedback subito nel DOM (non aspetta il round-trip Firebase)
+    showFeedback(liveResult);
+    refreshBtn();
+  });
+
+  // Annulla azione
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "wiz-btn-cancel";
+  cancelBtn.textContent = "✕ Annulla azione";
+  cancelBtn.addEventListener("click", async () => {
+    ctrl.tipo === "checkbox-multi"
+      ? await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), null)
+      : await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: null });
+    await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
+    showFeedback(null);
+    refreshBtn();
   });
 
   wrapper.appendChild(selectBtn);
-
-  // Box risultato per azioni già salvate (visibile al re-render successivo)
-  const savedResult = computeNightResult(ruolo, ctrl, azioni, players, stato);
-  if (savedResult) {
-    const box = document.createElement("div");
-    box.className = `result-box result-${savedResult.tipo}`;
-    box.textContent = savedResult.text;
-    wrapper.appendChild(box);
-  }
-
+  wrapper.appendChild(feedbackDiv);
+  wrapper.appendChild(cancelBtn);
   return wrapper;
+}
+
+// ── tempFeedback helpers ──────────────────────────────────────────────────────
+function getTempFeedbackResult(ruolo, ctrl, tempFeedback, players) {
+  const fb = tempFeedback?.[ruolo.id];
+  if (!fb) return null;
+  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
+    const target = players[fb.targetUid];
+    if (!target) return null;
+    return fb.risultato === "lupo"
+      ? { text: `${target.name} è un Lupo`,    tipo: "danger",  icon: "🐺" }
+      : { text: `${target.name} è Innocente`,  tipo: "ok",      icon: "✅" };
+  }
+  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
+    const target = players[fb.targetUid];
+    if (!target) return null;
+    return fb.risultato === "esce"
+      ? { text: `${target.name} è uscito di casa`,  tipo: "warning", icon: "🚶" }
+      : { text: `${target.name} è rimasto in casa`, tipo: "ok",      icon: "🏠" };
+  }
+  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied") {
+    return fb.roleName ? { text: `Copia il ruolo: ${fb.roleName}`, tipo: "info", icon: "🎭" } : null;
+  }
+  return null;
+}
+
+function buildTempFeedbackPayload(ruolo, ctrl, singleValue, result) {
+  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated")
+    return { targetUid: singleValue, risultato: result.tipo === "danger" ? "lupo" : "innocente" };
+  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched")
+    return { targetUid: singleValue, risultato: result.tipo === "warning" ? "esce" : "resta" };
+  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied")
+    return { roleName: singleValue };
+  return null;
+}
+
+// ── Night result (live, prima del round-trip Firebase) ────────────────────────
+function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stato) {
+  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
+    if (!newValue) return null;
+    const target = players[newValue];
+    if (!target) return null;
+    const isCursed   = azioni["sciamanoTarget"] === newValue;
+    const targetRole = Object.values(ROLES).find(r => r.nome === target.gameRole);
+    const isLupo     = targetRole?.fazione === "lupi" || isCursed;
+    return isLupo
+      ? { text: `${target.name} è un Lupo`,    tipo: "danger",  icon: "🐺" }
+      : { text: `${target.name} è Innocente`,  tipo: "ok",      icon: "✅" };
+  }
+  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
+    if (!newValue) return null;
+    const target = players[newValue];
+    if (!target) return null;
+    const esceNotte = playerEsceNotte(newValue, target, {
+      saved: azioni["saved"] ?? null, lovers: azioni["lovers"] ?? {}
+    }, stato ?? {});
+    return esceNotte
+      ? { text: `${target.name} è uscito di casa`,  tipo: "warning", icon: "🚶" }
+      : { text: `${target.name} è rimasto in casa`, tipo: "ok",      icon: "🏠" };
+  }
+  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied") {
+    if (!newValue) return null;
+    return { text: `Copia il ruolo: ${newValue}`, tipo: "info", icon: "🎭" };
+  }
+  return null;
 }
 
 // Riempie casualmente le azioni notturne di un ruolo assegnato a un bot.

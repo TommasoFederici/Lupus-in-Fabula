@@ -134,7 +134,8 @@ export async function processaNotte(gameCode) {
     }
   }
   updates["state/nightNumber"] = (stato.nightNumber ?? 1) + 1;
-  updates["nightActions"]      = null; // Firebase rimuove il nodo
+  updates["nightActions"]      = null;
+  updates["tempFeedback"]      = null;
 
   await update(ref(db, `games/${gameCode}`), updates);
 
