@@ -59,7 +59,18 @@ button {
 button:hover  { transform: translateY(-2px); filter: brightness(1.1); }
 button:active { transform: translateY(0); }
 
-#toggle-card { background: #3a5a8a; color: #e0ecff; }
+#toggle-card {
+  background: #3a5a8a;
+  color: #e0ecff;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+#toggle-card.holding {
+  background: #1a3a6a;
+  box-shadow: 0 0 0 3px rgba(100,160,240,0.4);
+  transform: scale(0.97);
+}
 .btn-phase   { background: var(--gold); color: var(--bg-deep); font-family: 'Cinzel', serif; letter-spacing: 0.05em; }
 .btn-danger  { background: var(--blood-light); color: #f0dada; margin-top: 1.5rem; }
 

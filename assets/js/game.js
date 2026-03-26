@@ -93,12 +93,26 @@ function setupPlayer() {
   const toggleBtn = document.getElementById("toggle-card");
   const statusEl  = document.getElementById("player-status");
 
-  let revealed = false;
-  toggleBtn.addEventListener("click", () => {
-    revealed = !revealed;
-    roleCard.textContent = revealed ? currentPlayerData.gameRole : "???";
-    roleCard.classList.toggle("revealed", revealed);
+  function showRole() {
+    roleCard.textContent = currentPlayerData.gameRole ?? "???";
+    roleCard.classList.add("revealed");
+    toggleBtn.classList.add("holding");
+  }
+  function hideRole() {
+    roleCard.textContent = "???";
+    roleCard.classList.remove("revealed");
+    toggleBtn.classList.remove("holding");
+  }
+
+  toggleBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    showRole();
   });
+  toggleBtn.addEventListener("pointerup",     hideRole);
+  toggleBtn.addEventListener("pointerleave",  hideRole);
+  toggleBtn.addEventListener("pointercancel", hideRole);
+  // Blocca il menu contestuale su mobile (long-press)
+  toggleBtn.addEventListener("contextmenu", (e) => e.preventDefault());
 
   onValue(ref(db, `games/${gameCode}/players/${currentUser.uid}`), (snap) => {
     const p = snap.val();
@@ -112,7 +126,7 @@ function setupPlayer() {
     statusEl.textContent   = stati.join(" · ");
     statusEl.style.display = stati.length ? "block" : "none";
 
-    if (revealed) roleCard.textContent = p.gameRole;
+    // nessun aggiornamento live necessario: il ruolo è visibile solo mentre si tiene premuto
   });
 }
 
