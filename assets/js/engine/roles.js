@@ -105,19 +105,20 @@ export const ROLES = {
 
     controlliNotte(giocatori) {
       return [{
-        tipo: "checkbox-multi", label: "Bersaglio",
+        tipo: "radio", label: "Bersaglio",
         chiaveAzione: "killed",
         filtroTarget: (p) => p.isAlive
       }];
     },
 
     processaNotte(azioni, sl, stato) {
-      const bersagli = Object.keys(azioni.killed || {}).filter(uid => azioni.killed[uid]);
+      const bersaglio = azioni.killed ?? null;
+      if (!bersaglio) return { aggiornamenti: [], logEventi: [] };
       return {
-        aggiornamenti: bersagli.map(uid => ({ uid, campi: { _morteNottePending: true } })),
-        logEventi: bersagli.map(uid => ({
-          tipo: "attacco_lupo", vittima: uid, notte: stato.nightNumber, timestamp: Date.now()
-        }))
+        aggiornamenti: [{ uid: bersaglio, campi: { _morteNottePending: true } }],
+        logEventi: [{
+          tipo: "attacco_lupo", vittima: bersaglio, notte: stato.nightNumber, timestamp: Date.now()
+        }]
       };
     },
     effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
@@ -359,8 +360,8 @@ export const ROLES = {
       const newTarget = azioni.ammaestratoreTarget;
       if (!newTarget) return { aggiornamenti: [], logEventi: [] };
       const ammUid = Object.keys(sl).find(u => sl[u].gameRole === "Ammaestratore");
-      // Cancella i flag di morte pendenti dai bersagli originali dei lupi
-      const vecchiBersagli = Object.keys(azioni.killed || {}).filter(u => azioni.killed[u]);
+      // Cancella i flag di morte pendenti dal bersaglio originale dei lupi
+      const vecchiBersagli = azioni.killed ? [azioni.killed] : [];
       const agg = vecchiBersagli.map(u => ({ uid: u, campi: { _morteNottePending: false } }));
       // Applica sul nuovo bersaglio (se non è un lupo)
       const isLupo = ["lupi"].includes(Object.values(ROLES).find(r => r.nome === sl[newTarget]?.gameRole)?.fazione);
@@ -619,6 +620,7 @@ export const ROLES = {
     descrizione: "Conosce gli altri Massoni. Nessun potere notturno.",
     fazione: "villaggio", fazioneApparente: "villaggio",
     prioritaNotte: null, attivoNotte: false, attivoGiorno: false, defaultCount: 0,
+    pairOnly: true,
     controlliNotte() { return null; },
     processaNotte() { return { aggiornamenti: [], logEventi: [] }; },
     effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
@@ -671,6 +673,7 @@ export const ROLES = {
     descrizione: "Se dormono insieme e uno viene attaccato, muoiono tutti.",
     fazione: "neutrale", fazioneApparente: "villaggio",
     prioritaNotte: 40, attivoNotte: true, attivoGiorno: false, defaultCount: 0,
+    pairOnly: true,
 
     controlliNotte(giocatori) {
       return [{
@@ -931,6 +934,11 @@ export const ROLES = {
     prioritaNotte: 15, attivoNotte: true, attivoGiorno: false, defaultCount: 0,
     isGhostRole: true,    // bypassa il check allDead nel wizard
     isGameMechanic: true, // non appare nella lista ruoli della lobby
+
+    getWizardPlayers(stato, players) {
+      const uid = stato.spettro;
+      return uid && players[uid] ? [[uid, players[uid]]] : [];
+    },
 
     controlliNotte(giocatori, azioni, stato) {
       const lastPick = stato.spettroLastPick ?? null;

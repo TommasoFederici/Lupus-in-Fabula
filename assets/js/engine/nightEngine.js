@@ -92,7 +92,7 @@ export async function processaNotte(gameCode) {
   }
 
   // ── 4. Immunità Mannari (non muoiono per mano dei lupi) ──────────────────
-  const killedByWolves = Object.keys(azioni.killed || {}).filter(u => azioni.killed[u]);
+  const killedByWolves = azioni.killed ? [azioni.killed] : [];
   for (const uid of killedByWolves) {
     if (["Lupo Mannaro", "Mucca Mannara"].includes(giocatori[uid]?.gameRole)) {
       sl[uid]._morteNottePending = false;

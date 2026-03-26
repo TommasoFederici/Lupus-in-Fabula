@@ -361,10 +361,12 @@ function loadRoles(dbRoles) {
         const controls = document.createElement("div");
         controls.className = "role-row-controls";
 
+        const step = ruolo.pairOnly ? 2 : 1;
+
         const minus = document.createElement("button");
         minus.textContent = "−";
         minus.className = "btn-count";
-        minus.addEventListener("click", () => updateRole(ruolo.nome, -1));
+        minus.addEventListener("click", () => updateRole(ruolo.nome, -step));
 
         const countEl = document.createElement("span");
         countEl.id = `role-count-${ruolo.nome}`;
@@ -374,7 +376,7 @@ function loadRoles(dbRoles) {
         const plus = document.createElement("button");
         plus.textContent = "+";
         plus.className = "btn-count";
-        plus.addEventListener("click", () => updateRole(ruolo.nome, +1));
+        plus.addEventListener("click", () => updateRole(ruolo.nome, +step));
 
         controls.append(minus, countEl, plus);
         bottom.appendChild(controls);

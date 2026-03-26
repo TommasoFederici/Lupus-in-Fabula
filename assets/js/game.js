@@ -3,7 +3,7 @@ import { db, auth } from "./firebase.js";
 import {
   ref, onValue, get, update, push
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import { ROLES, playerEsceNotte, calcSpettroProb, countWolves } from "./engine/roles.js";
+import { ROLES, checkWinConditions, playerEsceNotte, calcSpettroProb, countWolves } from "./engine/roles.js";
 import { ROLE_DATA } from "./engine/roleData.js";
 import { processaNotte } from "./engine/nightEngine.js";
 import { formatLogEntry } from "./engine/eventLog.js";
@@ -267,8 +267,23 @@ function setupNarrator() {
   }
 }
 
+const WIN_LABELS = {
+  lupi:      "Vince il Branco 🐺",
+  villaggio: "Vince il Villaggio 🌾",
+  mannari:   "Vincono i Mannari 🐂",
+  solitari:  "Vince il Matto 🃏",
+  alieni:    "Vincono gli Alieni 👽",
+  parassita: "Vince il Parassita 🦠",
+};
+
 function renderNarratorView(gameData) {
   lastGameData = gameData;
+
+  // Overlay vittoria per fazioni (lupi, villaggio, ecc.) — solo se non già mostrato
+  const winner = gameData.state?.winner ?? null;
+  if (winner && !document.getElementById("win-overlay")) {
+    triggerWin(WIN_LABELS[winner] ?? winner, null);
+  }
 
   const phase       = gameData.state?.phase        ?? "night";
   const nightNumber = gameData.state?.nightNumber   ?? 1;
@@ -284,21 +299,62 @@ function renderNarratorView(gameData) {
   document.getElementById("phase-indicator").textContent =
     phase === "night" ? `🌙 Notte ${nightNumber}` : `☀️ Giorno ${nightNumber - 1}`;
 
-  document.getElementById("toggle-phase-btn").textContent =
-    phase === "night" ? "☀️ Alba — Processa notte" : "🌙 Cala la notte";
+  const toggleBtn = document.getElementById("toggle-phase-btn");
 
   if (phase === "night") {
+    // Il bottone alba è gestito dal wizard/recap — nascondilo qui
+    toggleBtn.style.display = "none";
     document.getElementById("night-section").style.display = "block";
     document.getElementById("day-section").style.display   = "none";
     renderNightDashboard(gameData, skipFirst);
   } else {
+    toggleBtn.style.display = "";
+    toggleBtn.textContent   = "🌙 Cala la notte";
+    toggleBtn.disabled      = false;
     document.getElementById("night-section").style.display = "none";
     document.getElementById("day-section").style.display   = "block";
     renderDayTable(gameData);
     renderVoting(gameData);
   }
 
+  renderSecretDashboard(gameData);
   renderEventLog(gameData.log ?? {}, gameData.players ?? {});
+}
+
+function renderSecretDashboard(gameData) {
+  const container = document.getElementById("secret-dashboard");
+  if (!container) return;
+  const players     = gameData.players ?? {};
+  const spettroBoost = gameData.state?.spettroBoost ?? null;
+
+  const nonHost = Object.entries(players)
+    .filter(([, p]) => p.role !== "host")
+    .sort(([, a], [, b]) => (a.name ?? "").localeCompare(b.name ?? ""));
+
+  const rows = nonHost.map(([uid, p]) => {
+    const ruolo   = p.gameRole ?? "???";
+    const emoji   = ROLE_EMOJI[ruolo] ?? "•";
+    const plugin  = Object.values(ROLES).find(r => r.nome === ruolo);
+    const fazione = plugin?.fazione ?? "villaggio";
+    const fColor  = FACTION_COLOR[fazione] ?? "#e0a830";
+    const stato   = !p.isAlive
+      ? `<span style="color:#e05060">💀 Morto</span>`
+      : p.isMuted
+        ? `<span style="color:#a0a0c0">🤐 Silenziato</span>`
+        : `<span style="color:#40c0a0">✅ Vivo</span>`;
+    const boost = uid === spettroBoost ? ` <span style="color:#b090f0">👻×2</span>` : "";
+    return `<tr>
+      <td>${p.name ?? uid}${boost}</td>
+      <td>${emoji} ${ruolo}</td>
+      <td style="color:${fColor}">${fazione}</td>
+      <td>${stato}</td>
+    </tr>`;
+  }).join("");
+
+  container.innerHTML = `<table class="secret-table">
+    <thead><tr><th>Nome</th><th>Ruolo</th><th>Fazione</th><th>Stato</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -318,8 +374,6 @@ function renderNightDashboard(gameData, skipFirst) {
   const nomiAttivi    = Object.keys(rolesDB).filter(n => (rolesDB[n]?.count ?? 0) > 0);
   const activePlayers = Object.entries(players).filter(([, p]) => p.role !== "host" && p.isAlive);
 
-  const albaBtn = document.getElementById("toggle-phase-btn");
-
   const firstNightMode = skipFirst && (stato.nightNumber ?? 1) === 1;
 
   wizardRuoli = Object.values(ROLES)
@@ -329,11 +383,8 @@ function renderNightDashboard(gameData, skipFirst) {
 
   if (wizardRuoli.length === 0) {
     container.innerHTML = "<p class='empty-msg'>Nessun ruolo attivo questa notte.</p>";
-    if (albaBtn) albaBtn.disabled = false;
     return;
   }
-
-  if (albaBtn) albaBtn.disabled = firstNightMode ? false : !wizardDone;
 
   if (wizardDone) {
     renderNightRecap(container, gameData, activePlayers, players, azioni, tempFeedback);
@@ -352,12 +403,15 @@ function renderNightDashboard(gameData, skipFirst) {
   const total         = wizardRuoli.length;
   const roleColor     = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
   const emoji         = ROLE_EMOJI[ruolo.nome] ?? "•";
-  const allPlayersWithRole = Object.entries(players).filter(([, p]) => p.gameRole === ruolo.nome && p.role !== "host");
+  const allPlayersWithRole = ruolo.getWizardPlayers
+    ? ruolo.getWizardPlayers(stato, players)
+    : Object.entries(players).filter(([, p]) => p.gameRole === ruolo.nome && p.role !== "host");
   const aliveWithRole      = activePlayers.filter(([, p]) => p.gameRole === ruolo.nome);
   const powerUsed          = ruolo.flagUsato
     ? allPlayersWithRole.some(([uid]) => players[uid]?.[ruolo.flagUsato] === true)
     : false;
-  const allDead            = !ruolo.isGhostRole && allPlayersWithRole.length > 0 && aliveWithRole.length === 0;
+  const allDead    = !ruolo.isGhostRole && allPlayersWithRole.length > 0 && aliveWithRole.length === 0;
+  const nessunRuolo = allPlayersWithRole.length === 0;
 
   const giocatoriMap  = Object.fromEntries(activePlayers);
   const controlli     = ruolo.controlliNotte(giocatoriMap, azioni, stato, { allPlayers: players, rolesDB });
@@ -389,13 +443,15 @@ function renderNightDashboard(gameData, skipFirst) {
          </div>`
       : `<p class="wiz-no-players">Nessuno con questo ruolo in partita.</p>`}`;
 
-  // ── Simplified card: prima notte, tutti morti, o potere già usato
-  if (firstNightMode || allDead || powerUsed) {
+  // ── Simplified card: prima notte, tutti morti, potere già usato, o nessun giocatore assegnato
+  if (firstNightMode || allDead || powerUsed || nessunRuolo) {
     const msg = firstNightMode
       ? "🌙 Prima notte: nessuna azione — chiamalo e vai avanti."
       : allDead
-        ? "💀 Questo ruolo non c'è più in gioco — chiamalo e vai avanti."
-        : "⏸ Questo ruolo ha già usato il suo potere — chiamalo e vai avanti.";
+        ? "💀 Questo ruolo non c'è più in gioco."
+        : nessunRuolo
+          ? "👤 Nessun giocatore assegnato a questo ruolo."
+          : "⏸ Questo ruolo ha già usato il suo potere.";
     const infoP = document.createElement("p");
     infoP.className = "wiz-simplified-msg";
     infoP.textContent = msg;
@@ -410,14 +466,14 @@ function renderNightDashboard(gameData, skipFirst) {
       backBtn.addEventListener("click", () => { wizardStep--; renderNightDashboard(lastGameData, skipFirst); });
       nav.appendChild(backBtn);
     }
-    const nextBtn = document.createElement("button");
-    nextBtn.className = "wiz-btn wiz-btn-next";
-    nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Completa notte →";
-    nextBtn.addEventListener("click", () => {
+    const proseguiBtn = document.createElement("button");
+    proseguiBtn.className = "wiz-btn wiz-btn-next";
+    proseguiBtn.textContent = wizardStep < total - 1 ? "Prosegui →" : "✓ Completa notte →";
+    proseguiBtn.addEventListener("click", () => {
       if (wizardStep < wizardRuoli.length - 1) { wizardStep++; } else { wizardDone = true; }
       renderNightDashboard(lastGameData, lastSkipFirst);
     });
-    nav.appendChild(nextBtn);
+    nav.appendChild(proseguiBtn);
     card.appendChild(nav);
     container.appendChild(card);
     return;
@@ -484,9 +540,15 @@ function renderNightDashboard(gameData, skipFirst) {
   });
   nav.appendChild(skipBtn);
 
+  const hasUnfilledRequired = (controlli ?? []).some(
+    ctrl => !ctrl.opzionale && !_azioneIsSet(ctrl, azioni)
+  );
+
   const nextBtn = document.createElement("button");
   nextBtn.className = "wiz-btn wiz-btn-next";
   nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Completa notte →";
+  nextBtn.disabled = hasUnfilledRequired;
+  nextBtn.title = hasUnfilledRequired ? "Seleziona un bersaglio prima di proseguire" : "";
   nextBtn.addEventListener("click", () => {
     if (wizardStep < wizardRuoli.length - 1) {
       wizardStep++;
@@ -511,7 +573,7 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
     .sort((a, b) => a.prioritaNotte - b.prioritaNotte);
 
   // ── Calcola morti attesi ──────────────────────────────────────────────────
-  const killed   = Object.keys(azioni.killed  ?? {}).filter(u => azioni.killed[u]);
+  const killed   = azioni.killed ? [azioni.killed] : [];
   const savedUid = azioni.saved ?? null;
   const mortiAttesi = killed.filter(uid => uid !== savedUid);
 
@@ -610,6 +672,14 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
 
   // Alba
   wrap.querySelector("#recap-alba-btn").addEventListener("click", handlePhaseToggle);
+}
+
+// ── Helper: controlla se un'azione ha un valore impostato ────────────────────
+function _azioneIsSet(ctrl, azioni) {
+  if (ctrl.tipo === "checkbox-multi") {
+    return Object.values(azioni[ctrl.chiaveAzione] ?? {}).some(Boolean);
+  }
+  return !!azioni[ctrl.chiaveAzione];
 }
 
 // ── Sentinel picker cancelled ─────────────────────────────────────────────────
@@ -1218,6 +1288,23 @@ async function handleMandaAlRogo(uid, players) {
   // Effetti passivi (Kamikaze, Folle...)
   await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti: [] }, players);
 
+  // Check win conditions dopo ogni morte di giorno
+  const playersAggiornati = { ...players, [uid]: { ...players[uid], isAlive: false } };
+  const vincitore = checkWinConditions(playersAggiornati, lastGameData?.state ?? {});
+  if (vincitore) {
+    await update(ref(db, `games/${gameCode}/state`), { winner: vincitore });
+    await push(ref(db, `games/${gameCode}/log`), {
+      tipo: "vittoria", vincitore, giorno: (lastGameData?.state?.nightNumber ?? 2) - 1, timestamp: Date.now()
+    });
+  }
+
+  // Vittoria istantanea Folle
+  if (players[uid]?.gameRole === "Folle") {
+    triggerWin("Vince il Matto 🃏", async () => {
+      await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: true });
+    });
+  }
+
   // Azzera voti
   await update(ref(db, `games/${gameCode}/dayActions`), { votes: null, corvoTarget: null });
 }
@@ -1404,6 +1491,38 @@ function renderEventLog(log, giocatori) {
   }).join("");
 }
 
+// ── Vittoria overlay ──────────────────────────────────────────────────────────
+// undoFn: funzione opzionale per ripristino extra (es. revive Folle).
+// Entrambi i bottoni sono sempre presenti.
+function triggerWin(label, undoFn) {
+  if (document.getElementById("win-overlay")) return; // già mostrato
+
+  const overlay = document.createElement("div");
+  overlay.id        = "win-overlay";
+  overlay.className = "win-overlay";
+  overlay.innerHTML = `
+    <div class="win-overlay-box">
+      <div class="win-overlay-title">🏆 VITTORIA!</div>
+      <div class="win-overlay-subtitle">${label}</div>
+      <button id="win-overlay-end"  class="btn-danger" style="margin-top:1rem;width:100%">🏁 Termina Partita</button>
+      <button id="win-overlay-undo" class="btn-undo"   style="margin-top:0.5rem;width:100%">↩ Annulla vittoria</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  document.getElementById("win-overlay-end").addEventListener("click", () => {
+    overlay.remove();
+    handleEndGame();
+  });
+
+  document.getElementById("win-overlay-undo").addEventListener("click", async () => {
+    overlay.remove();
+    if (undoFn) await undoFn();
+    // Rimuove state/winner così la partita riprende senza overlay
+    await update(ref(db, `games/${gameCode}/state`), { winner: null });
+  });
+}
+
 // ── Copia Log per WhatsApp ────────────────────────────────────────────────────
 async function copyLogToClipboard() {
   const log       = lastGameData?.log     ?? {};
@@ -1438,11 +1557,24 @@ async function copyLogToClipboard() {
     lines.push("");
   }
 
+  const text = lines.join("\n");
   try {
-    await navigator.clipboard.writeText(lines.join("\n"));
-    ui.toast("✓ Log copiato!");
+    await navigator.clipboard.writeText(text);
+    ui.toast("✓ Log copiato!", { icon: "📋" });
   } catch {
-    ui.toast("Errore durante la copia.");
+    // Fallback per contesti non-HTTPS o browser senza clipboard API
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      ui.toast("✓ Log copiato!", { icon: "📋" });
+    } catch {
+      ui.toast("Errore durante la copia.", { icon: "❌" });
+    }
+    document.body.removeChild(ta);
   }
 }
 
