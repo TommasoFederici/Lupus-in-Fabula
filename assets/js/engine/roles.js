@@ -922,6 +922,30 @@ export const ROLES = {
     effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
   },
 
+  // ── SPETTRO DEL VILLAGGIO ─────────────────────────────────────────────────
+
+  spettroDelVillaggio: {
+    id: "spettroDelVillaggio", nome: "Spettro del Villaggio",
+    descrizione: "Il primo morto diventa spettro: ogni notte sceglie un giocatore il cui voto al rogo vale doppio.",
+    fazione: "neutrale", fazioneApparente: "villaggio",
+    prioritaNotte: 15, attivoNotte: true, attivoGiorno: false, defaultCount: 0,
+    isGhostRole: true,    // bypassa il check allDead nel wizard
+    isGameMechanic: true, // non appare nella lista ruoli della lobby
+
+    controlliNotte(giocatori, azioni, stato) {
+      const lastPick = stato.spettroLastPick ?? null;
+      return [{
+        tipo: "radio", label: "Scegli chi voterà doppio domani",
+        chiaveAzione: "spettroTarget",
+        filtroTarget: (p, uid) => p.isAlive && uid !== lastPick,
+        opzionale: true
+      }];
+    },
+
+    processaNotte() { return { aggiornamenti: [], logEventi: [] }; },
+    effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
+  },
+
   // ── Ruoli senza azione notturna ────────────────────────────────────────────
 
   figlioDelLupo: {
@@ -934,6 +958,22 @@ export const ROLES = {
     effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
   },
 };
+
+// ── Probabilità assegnazione Spettro ─────────────────────────────────────────
+// deathsSoFar: morti avvenute senza che lo Spettro fosse assegnato (0-based).
+// N: giocatori totali (escluso host), W: lupi "veri" (Lupo + Lupo Ciccione).
+// La formula garantisce il 100% all'ultima morte "sicura" prima della vittoria dei lupi.
+const RUOLI_LUPO_VERI = ["Lupo", "Lupo Ciccione"];
+export function calcSpettroProb(deathsSoFar, N, W) {
+  const deadline = Math.max(1, N - 2 * W - 1);
+  const k = deathsSoFar + 1; // k-esima morte
+  if (deadline <= 1) return 1.0;
+  const BASE = 0.7;
+  return Math.min(1.0, BASE + (k - 1) * (1 - BASE) / (deadline - 1));
+}
+export function countWolves(players) {
+  return Object.values(players).filter(p => RUOLI_LUPO_VERI.includes(p.gameRole)).length;
+}
 
 // ── Ruoli attivi di notte in partita, ordinati per priorità ──────────────────
 export function getRuoliNotte(nomiAttiviInPartita) {

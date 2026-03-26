@@ -145,6 +145,9 @@ async function setupLobby() {
       const skipChk = document.getElementById("skip-first-night");
       if (skipChk) skipChk.checked = gameData.state?.skipFirstNight ?? false;
 
+      const spettroChk = document.getElementById("spettro-enabled");
+      if (spettroChk) spettroChk.checked = gameData.state?.spettroEnabled ?? false;
+
       const devChk = document.getElementById("dev-mode");
       if (devChk) devChk.checked = devMode;
 
@@ -219,6 +222,11 @@ async function setupLobby() {
   document.getElementById("dev-mode")?.addEventListener("change", (e) => {
     if (!isHost) return;
     update(ref(db, `games/${gameCode}/state`), { devMode: e.target.checked });
+  });
+
+  document.getElementById("spettro-enabled")?.addEventListener("change", (e) => {
+    if (!isHost) return;
+    update(ref(db, `games/${gameCode}/state`), { spettroEnabled: e.target.checked });
   });
 
   document.getElementById("add-bot-btn")?.addEventListener("click", addBot);
@@ -304,8 +312,8 @@ function loadRoles(dbRoles) {
   container.innerHTML = "";
 
   for (const cat of CATEGORIES) {
-    // Usa SOLO ROLE_DATA.categoria come fonte di verità per la UI
-    const ruoliCat = Object.values(ROLES).filter(r => ROLE_DATA[r.nome]?.categoria === cat.id);
+    // Usa SOLO ROLE_DATA.categoria come fonte di verità per la UI; escludi meccaniche di gioco
+    const ruoliCat = Object.values(ROLES).filter(r => ROLE_DATA[r.nome]?.categoria === cat.id && !r.isGameMechanic);
     if (ruoliCat.length === 0) continue;
 
     const header = document.createElement("div");
@@ -469,6 +477,20 @@ async function startGame() {
   updates["state/status"]      = "running";
   updates["state/phase"]       = "night";
   updates["state/nightNumber"] = 1;
+
+  // Pulisce ruoli di meccanica di gioco e stato residuo da partite precedenti
+  for (const ruolo of Object.values(ROLES)) {
+    if (ruolo.isGameMechanic) updates[`roles/${ruolo.nome}`] = null;
+  }
+  updates["state/spettro"]         = null;
+  updates["state/spettroNights"]   = null;
+  updates["state/spettroDeaths"]   = null;
+  updates["state/spettroBoost"]    = null;
+  updates["state/spettroLastPick"] = null;
+  updates["state/winner"]          = null;
+  updates["log"]                   = null;
+  updates["nightActions"]          = null;
+  updates["dayActions"]            = null;
 
   await update(ref(db, `games/${gameCode}`), updates);
 }

@@ -413,4 +413,19 @@ export const ROLE_DATA = {
     ],
     abilita: [{ nome: "Contagio", desc: "Infetta i giocatori progressivamente per vincere in solitaria" }],
   },
+
+  "Spettro del Villaggio": {
+    categoria: "neutrale",
+    fazioneApparente: "Villaggio",
+    emoji: "👻",
+    descrizioneLunga: "Il primo giocatore a morire non sparisce del tutto — il suo spirito rimane nel villaggio con un potere misterioso.",
+    meccaniche: [
+      "Diventa automaticamente Spettro il primo giocatore eliminato (di notte o al rogo)",
+      "Ogni notte sceglie un giocatore vivo: il suo voto al rogo del giorno successivo vale 2",
+      "Non può scegliere lo stesso giocatore due notti di fila",
+      "Non può votare al rogo (è già morto)",
+      "Vince con la sua fazione originale — lo spirito resta leale",
+    ],
+    abilita: [{ nome: "Voto Doppio", desc: "Il giocatore scelto di notte conta doppio al prossimo rogo" }],
+  },
 };

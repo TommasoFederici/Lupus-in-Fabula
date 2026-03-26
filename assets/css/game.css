@@ -651,6 +651,13 @@ button:active { transform: translateY(0); }
   border-radius: 4px;
   animation: pulse-pending 1.2s ease-in-out infinite;
 }
+.badge-spettro {
+  background: #1a1030;
+  color: #b090f0;
+  font-size: 0.74rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
 
 .btn-vote-minus, .btn-vote-plus {
   width: auto;
@@ -675,6 +682,40 @@ button:active { transform: translateY(0); }
   color: var(--text-muted);
 }
 .corvo-label input { accent-color: #c9a84c; cursor: pointer; }
+
+.spettro-boost-banner {
+  font-size: 0.85rem;
+  color: #b090f0;
+  background: #1a1030;
+  border-left: 3px solid #7050c0;
+  padding: 0.4rem 0.7rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+}
+.spettro-vote-section {
+  background: #14102a;
+  border: 1px solid #3a2860;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin: 0.5rem 0;
+}
+.spettro-vote-label {
+  display: block;
+  font-size: 0.82rem;
+  color: #9070d4;
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+}
+.spettro-vote-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  padding: 0.2rem 0;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.spettro-vote-option input { accent-color: #9070d4; cursor: pointer; }
 
 .btn-rogo {
   width: 100%;

@@ -3,7 +3,7 @@ import { db, auth } from "./firebase.js";
 import {
   ref, onValue, get, update, push
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import { ROLES, playerEsceNotte } from "./engine/roles.js";
+import { ROLES, playerEsceNotte, calcSpettroProb, countWolves } from "./engine/roles.js";
 import { ROLE_DATA } from "./engine/roleData.js";
 import { processaNotte } from "./engine/nightEngine.js";
 import { formatLogEntry } from "./engine/eventLog.js";
@@ -36,12 +36,16 @@ const ROLE_EMOJI = {
   "Lupo Ciccione": "🍔", "Lupo Cieco": "🙈", "Lupo Mannaro": "🌕",
   "Genio": "🧞‍♂️", "Medium": "🕯️", "Angelo": "😇",
   "Giustiziere": "⚔️", "Massone": "🧱", "Mutaforma": "👽",
-  "Simbionte": "🧬", "Parassita": "🦠", "Mucca Mannara": "🐮"
+  "Simbionte": "🧬", "Parassita": "🦠", "Mucca Mannara": "🐮",
+  "Spettro del Villaggio": "👻"
 };
 const FACTION_COLOR = {
   lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0",
   mannari: "#d4884a", alieni: "#44c4c4", parassita: "#88cc44", solitari: "#cc8844"
 };
+
+// ── Spettro del Villaggio (player view) ────────────────────────────────────
+let isSpettroPlayer = false;
 
 // ── Safe mode: stack annulla ultima azione ─────────────────────────────────
 // Ogni entry: { descrizione: string, applica: async () => void }
@@ -95,7 +99,7 @@ function setupPlayer() {
   const statusEl  = document.getElementById("player-status");
 
   function showRole() {
-    const nome  = currentPlayerData.gameRole ?? "???";
+    const nome  = isSpettroPlayer ? "Spettro del Villaggio" : (currentPlayerData.gameRole ?? "???");
     const dati  = ROLE_DATA[nome];
     const emoji = ROLE_EMOJI[nome] ?? "";
     const desc  = dati?.descrizioneLunga ?? dati?.descrizione ?? "";
@@ -123,11 +127,15 @@ function setupPlayer() {
 
   // ── Wiki
   document.getElementById("show-wiki-btn").addEventListener("click", () => {
-    showRoleWiki(currentPlayerData.gameRole);
+    showRoleWiki(isSpettroPlayer ? "Spettro del Villaggio" : currentPlayerData.gameRole);
   });
   document.getElementById("role-wiki-close").addEventListener("click", closeRoleWiki);
   document.getElementById("role-wiki-modal").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeRoleWiki();
+  });
+
+  onValue(ref(db, `games/${gameCode}/state/spettro`), (snap) => {
+    isSpettroPlayer = snap.val() === currentUser.uid;
   });
 
   onValue(ref(db, `games/${gameCode}/players/${currentUser.uid}`), (snap) => {
@@ -136,13 +144,12 @@ function setupPlayer() {
     currentPlayerData = p;
 
     const stati = [];
-    if (!p.isAlive) stati.push("💀 Sei morto");
-    if (p.isMuted)  stati.push("🤐 Sei silenziato oggi");
+    if (isSpettroPlayer)   stati.push("👻 Sei lo Spettro del Villaggio");
+    else if (!p.isAlive)   stati.push("💀 Sei morto");
+    if (p.isMuted)         stati.push("🤐 Sei silenziato oggi");
 
     statusEl.textContent   = stati.join(" · ");
     statusEl.style.display = stati.length ? "block" : "none";
-
-    // nessun aggiornamento live necessario: il ruolo è visibile solo mentre si tiene premuto
   });
 }
 
@@ -317,6 +324,7 @@ function renderNightDashboard(gameData, skipFirst) {
 
   wizardRuoli = Object.values(ROLES)
     .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
+    .filter(r => !r.isGhostRole || !!stato.spettro) // Spettro appare solo dopo la prima morte
     .sort((a, b) => a.prioritaNotte - b.prioritaNotte);
 
   if (wizardRuoli.length === 0) {
@@ -349,7 +357,7 @@ function renderNightDashboard(gameData, skipFirst) {
   const powerUsed          = ruolo.flagUsato
     ? allPlayersWithRole.some(([uid]) => players[uid]?.[ruolo.flagUsato] === true)
     : false;
-  const allDead            = allPlayersWithRole.length > 0 && aliveWithRole.length === 0;
+  const allDead            = !ruolo.isGhostRole && allPlayersWithRole.length > 0 && aliveWithRole.length === 0;
 
   const giocatoriMap  = Object.fromEntries(activePlayers);
   const controlli     = ruolo.controlliNotte(giocatoriMap, azioni, stato, { allPlayers: players, rolesDB });
@@ -695,7 +703,7 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
     : activePlayers;
 
   const targets = ctrl.filtroTarget
-    ? candidatePlayers.filter(([, p]) => ctrl.filtroTarget(p))
+    ? candidatePlayers.filter(([uid, p]) => ctrl.filtroTarget(p, uid))
     : candidatePlayers;
 
   function currentDisplay() {
@@ -979,7 +987,7 @@ async function fillBotAction(ruolo, azioni, activePlayers, rolesDB, stato) {
 
   for (const ctrl of controlli) {
     const targets = ctrl.filtroTarget
-      ? activePlayers.filter(([, p]) => ctrl.filtroTarget(p))
+      ? activePlayers.filter(([uid, p]) => ctrl.filtroTarget(p, uid))
       : activePlayers;
     if (targets.length === 0) continue;
 
@@ -1014,8 +1022,9 @@ function renderDayTable(gameData) {
   const container  = document.getElementById("day-players");
   container.innerHTML = "";
 
-  const players    = gameData.players ?? {};
-  const allPlayers = Object.entries(players).filter(([, p]) => p.role !== "host");
+  const players      = gameData.players ?? {};
+  const spettroBoost = gameData.state?.spettroBoost ?? null;
+  const allPlayers   = Object.entries(players).filter(([, p]) => p.role !== "host");
 
   allPlayers.forEach(([uid, p]) => {
     const row = document.createElement("div");
@@ -1024,6 +1033,7 @@ function renderDayTable(gameData) {
     const info = document.createElement("span");
     info.className = "player-info";
     info.innerHTML = `<strong>${p.name}</strong> <span class="role-tag">${p.gameRole ?? "?"}</span>`;
+    if (spettroBoost === uid) info.innerHTML += ` <span class="badge badge-spettro">👻 ×2</span>`;
     if (p.isBot)    info.innerHTML += ` <span class="badge badge-bot">🤖 Bot</span>`;
     if (p.isMuted)  info.innerHTML += ` <span class="badge badge-muted">🤐 Silenz.</span>`;
     if (!p.isAlive) info.innerHTML += ` <span class="badge badge-dead">💀 Morto</span>`;
@@ -1054,9 +1064,11 @@ function renderVoting(gameData) {
 
   const players    = gameData.players    ?? {};
   const rolesDB    = gameData.roles      ?? {};
+  const stato      = gameData.state      ?? {};
   const dayActions = gameData.dayActions ?? {};
   const votes      = dayActions.votes    ?? {};
-  const corvoTarget = dayActions.corvoTarget ?? null;
+  const corvoTarget  = dayActions.corvoTarget ?? null;
+  const spettroBoost = stato.spettroBoost ?? null; // uid del giocatore con voto doppio oggi
 
   const alivePlayers = Object.entries(players)
     .filter(([, p]) => p.role !== "host" && p.isAlive);
@@ -1068,7 +1080,7 @@ function renderVoting(gameData) {
 
   const hasCorvo = (rolesDB["Corvo"]?.count ?? 0) > 0;
 
-  // Calcola totali e condannato
+  // Calcola totali (il narratore inserisce manualmente il doppio voto dello spettro)
   const totali = {};
   for (const [uid] of alivePlayers) {
     totali[uid] = (votes[uid] ?? 0) + (hasCorvo && corvoTarget === uid ? 1 : 0);
@@ -1079,6 +1091,15 @@ function renderVoting(gameData) {
   const title = document.createElement("h3");
   title.textContent = "⚖️ Votazione";
   container.appendChild(title);
+
+  // Banner promemoria voto doppio
+  if (spettroBoost) {
+    const boostName = players[spettroBoost]?.name ?? spettroBoost;
+    const banner = document.createElement("p");
+    banner.className = "spettro-boost-banner";
+    banner.innerHTML = `👻 Il voto di <strong>${boostName}</strong> vale doppio — conta +2 quando vota`;
+    container.appendChild(banner);
+  }
 
   // Riga per ogni giocatore
   alivePlayers.forEach(([uid, p]) => {
@@ -1092,9 +1113,9 @@ function renderVoting(gameData) {
 
     const voteCount = document.createElement("span");
     voteCount.className = "vote-count";
-    const base  = votes[uid] ?? 0;
-    const bonus = hasCorvo && corvoTarget === uid ? 1 : 0;
-    voteCount.textContent = bonus ? `${base + bonus} (${base}+1🪶)` : `${base}`;
+    const base       = votes[uid] ?? 0;
+    const bonusCorvo = hasCorvo && corvoTarget === uid ? 1 : 0;
+    voteCount.textContent = bonusCorvo ? `${base + bonusCorvo} (${base}+1🪶)` : `${base}`;
 
     const minus = document.createElement("button");
     minus.className = "quick-btn btn-vote-minus";
@@ -1172,6 +1193,27 @@ async function handleMandaAlRogo(uid, players) {
   await push(ref(db, `games/${gameCode}/log`), {
     tipo: "morte_giorno", uid, giorno: _giorno, timestamp: Date.now()
   });
+
+  // Assegna Spettro (probabilistico, solo se abilitato e non ancora assegnato)
+  if (lastGameData?.state?.spettroEnabled && !lastGameData?.state?.spettro) {
+    const nonHost = Object.values(players).filter(p => p.role !== "host");
+    const N = nonHost.length;
+    const W = countWolves(players);
+    const deathsSoFar = lastGameData.state?.spettroDeaths ?? 0;
+    const prob = calcSpettroProb(deathsSoFar, N, W);
+    if (Math.random() < prob) {
+      await update(ref(db, `games/${gameCode}`), {
+        "state/spettro": uid,
+        "state/spettroNights": 0,
+        "roles/Spettro del Villaggio": { count: 1 }
+      });
+      await push(ref(db, `games/${gameCode}/log`), {
+        tipo: "spettro_assegnato", uid, giorno: _giorno, timestamp: Date.now()
+      });
+    } else {
+      await update(ref(db, `games/${gameCode}/state`), { spettroDeaths: deathsSoFar + 1 });
+    }
+  }
 
   // Effetti passivi (Kamikaze, Folle...)
   await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti: [] }, players);
@@ -1313,7 +1355,9 @@ function _phaseKey(fase) { return `${fase.tipo}:${fase.numero}`; }
 
 function renderEventLog(log, giocatori) {
   const container = document.getElementById("event-log");
-  const allEvents = Object.values(log);
+
+  // Includi la push-key di Firebase per ordinamento affidabile
+  const allEvents = Object.entries(log).map(([_key, e]) => ({ ...e, _key }));
 
   if (allEvents.length === 0) {
     container.innerHTML = "<p class='empty-msg'>Nessun evento ancora.</p>";
@@ -1339,8 +1383,8 @@ function renderEventLog(log, giocatori) {
       : `☀️ Giorno ${fase.numero}`;
     const color = fase.tipo === "notte" ? "#8080c0" : "#c0a040";
 
-    // All'interno della fase: ordine cronologico inverso (più recente in cima)
-    const sorted = [...events].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    // Object.entries già in ordine push-key crescente → reverse = più recente in cima
+    const sorted = [...events].reverse();
 
     const rows = sorted.map(e => {
       const time    = e.timestamp
@@ -1364,7 +1408,7 @@ function renderEventLog(log, giocatori) {
 async function copyLogToClipboard() {
   const log       = lastGameData?.log     ?? {};
   const giocatori = lastGameData?.players ?? {};
-  const allEvents = Object.values(log);
+  const allEvents = Object.entries(log).map(([_key, e]) => ({ ...e, _key }));
 
   if (allEvents.length === 0) {
     ui.toast("Nessun evento da copiare.");
@@ -1387,7 +1431,7 @@ async function copyLogToClipboard() {
   for (const { fase, events } of phases) {
     const label = fase.tipo === "notte" ? `*🌙 NOTTE ${fase.numero}*` : `*☀️ GIORNO ${fase.numero}*`;
     lines.push(label);
-    const sorted = [...events].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    const sorted = [...events].reverse();
     for (const e of sorted) {
       lines.push(`- ${formatLogEntry(e, giocatori)}`);
     }

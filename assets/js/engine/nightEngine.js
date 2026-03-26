@@ -18,7 +18,7 @@
 
 import { db } from "../firebase.js";
 import { ref, get, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import { ROLES, checkWinConditions } from "./roles.js";
+import { ROLES, checkWinConditions, calcSpettroProb, countWolves } from "./roles.js";
 import { logEventi } from "./eventLog.js";
 
 export async function processaNotte(gameCode) {
@@ -41,6 +41,7 @@ export async function processaNotte(gameCode) {
   const nomiAttivi = Object.keys(rolesDB).filter(n => (rolesDB[n]?.count ?? 0) > 0);
   const ruoliNotte = Object.values(ROLES)
     .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
+    .filter(r => !r.isGhostRole || !!stato.spettro) // Spettro agisce solo dopo la prima morte
     .sort((a, b) => a.prioritaNotte - b.prioritaNotte);
 
   const tuttiLog = [];
@@ -110,6 +111,24 @@ export async function processaNotte(gameCode) {
     }
   }
 
+  // ── 5.5. Assegna Spettro (probabilistico) ───────────────────────────────────
+  let newSpettroUid  = null;
+  let newSpettroDeaths = stato.spettroDeaths ?? 0;
+  if (stato.spettroEnabled && !stato.spettro && mortiNotte.length > 0) {
+    const nonHost = Object.values(giocatori).filter(p => p.role !== "host");
+    const N = nonHost.length;
+    const W = countWolves(giocatori);
+    for (const uid of mortiNotte) {
+      const prob = calcSpettroProb(newSpettroDeaths, N, W);
+      if (Math.random() < prob) {
+        newSpettroUid = uid;
+        tuttiLog.push({ tipo: "spettro_assegnato", uid, notte: stato.nightNumber, timestamp: Date.now() });
+        break;
+      }
+      newSpettroDeaths++;
+    }
+  }
+
   // ── 6. Aggiornamento infected ────────────────────────────────────────────
   const infettatiNotte = Object.keys(sl).filter(u => sl[u]._infected && !giocatori[u]?._infected);
   // Merge con infected già in stato
@@ -164,6 +183,28 @@ export async function processaNotte(gameCode) {
   updates["state/nightNumber"] = (stato.nightNumber ?? 1) + 1;
   updates["state/infected"]    = Object.keys(infectedMap).length > 0 ? infectedMap : null;
   if (vincitore) updates["state/winner"] = vincitore;
+  if (newSpettroUid) {
+    updates["state/spettro"]               = newSpettroUid;
+    updates["state/spettroNights"]         = 0;
+    updates["roles/Spettro del Villaggio"] = { count: 1 };
+  } else if (stato.spettroEnabled && !stato.spettro) {
+    updates["state/spettroDeaths"] = newSpettroDeaths;
+  }
+  if (stato.spettro && !newSpettroUid) {
+    // Probabilità: 30% seconda notte (prima attivazione), +10% ogni notte fino a 100%
+    const nights = stato.spettroNights ?? 0;
+    const prob   = Math.min(1.0, 0.3 + 0.1 * nights);
+    const target = azioni.spettroTarget ?? null;
+    const attiva = target && Math.random() < prob;
+    updates["state/spettroBoost"]    = attiva ? target : null;
+    updates["state/spettroLastPick"] = target;
+    updates["state/spettroNights"]   = nights + 1;
+    if (attiva) {
+      tuttiLog.push({ tipo: "spettro_boost", bersaglio: target, notte: stato.nightNumber, timestamp: Date.now() });
+    } else {
+      tuttiLog.push({ tipo: "spettro_no_boost", notte: stato.nightNumber, timestamp: Date.now() });
+    }
+  }
   updates["nightActions"]      = null;
   updates["tempFeedback"]      = null;
 
@@ -185,6 +226,14 @@ function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
     ? { testo: `Stanotte sono morti: ${nomiMorti.join(", ")}`, tipo: "morte" }
     : { testo: "Stanotte non è morto nessuno.", tipo: "ok" }
   );
+
+  const spettro = eventi.find(e => e.tipo === "spettro_assegnato");
+  if (spettro) righe.push({ testo: `👻 ${nome(spettro.uid)} è diventato lo Spettro del Villaggio!`, tipo: "trasforma" });
+
+  const spettroBoost = eventi.find(e => e.tipo === "spettro_boost");
+  if (spettroBoost) righe.push({ testo: `👻 Lo Spettro: il voto di ${nome(spettroBoost.bersaglio)} vale doppio oggi`, tipo: "info" });
+  const spettroNo = eventi.find(e => e.tipo === "spettro_no_boost");
+  if (spettroNo) righe.push({ testo: "👻 Lo Spettro oggi non ha voglia di aiutare nessuno", tipo: "info" });
 
   const figlio = eventi.find(e => e.tipo === "figlio_diventa_lupo");
   if (figlio) righe.push({ testo: `🌕 ${nome(figlio.uid)} si è trasformato in Lupo!`, tipo: "trasforma" });

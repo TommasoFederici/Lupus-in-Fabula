@@ -1,3 +1,4 @@
-- Annullamento dell'azione non mette nome del personaggio ma mette un id a caso. fixare
-- Log appende dal basso verso l'alto, quindi prima azione della notte in alto, ultima in basso, ma poi appende la notte ai log in alto. quindi il senso logico è rotto, dato che bisognerebbe leggere ogni notte dall'alto verso il basso ma i log in generale dal basso verso l'alto
-- a proposito dei logs, ci starebbe se fossero divisi per notte, in modo che il narratore possa vederli, e magari poi esportare in un messaggio whatsapp alla fine della partita, cioè copiare in clipboard intendo, strutturati da messaggio whatsapp
+- Log copia clipboard non funziona, fixare
+- dashboard narratore, che vede durante la notte tutte le persone tutti i ruoli, tirando giù una tendina
+- quando c'è un evento vittoria, a schermo deve esserci scritto VITTORIA! Vincono i "Fazione" e basta. la partita non deve continuare. a meno che il narratore non prema annulla e torni indietro l'azione. 
+- Quando il matto viene espulso, non conta come condizione di vittoria. è un bug. 

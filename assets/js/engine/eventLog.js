@@ -47,6 +47,9 @@ export function formatLogEntry(e, giocatori = {}) {
     case "kamikaze_vendetta":               return `💥 Kamikaze ${nome(e.kamikaze)} porta con sé ${nome(e.morto)}`;
     case "folle_vince":                     return `🃏 ${nome(e.uid)} era il Folle e ha vinto!`;
     case "bloccato_da_illusionista":        return `🪄 Illusionista blocca: ${e.ruolo}`;
+    case "spettro_assegnato":              return `👻 ${nome(e.uid)} diventa lo Spettro del Villaggio`;
+    case "spettro_boost":                  return `👻 Spettro dà il voto doppio a ${nome(e.bersaglio)}`;
+    case "spettro_no_boost":               return `👻 Lo Spettro non aiuta nessuno stanotte`;
     case "vittoria":                        return `🏆 VITTORIA: ${(e.vincitore ?? "").toUpperCase()}`;
     default:                                return e.tipo;
   }
