@@ -25,13 +25,22 @@ let lastSkipFirst   = false;
 let wizardRuoli     = [];
 
 const ROLE_EMOJI = {
-  "Lupo": "🐺", "Lupo Sciamano": "🔮", "Figlio del Lupo": "🌕",
+  "Lupo": "🐺", "Sciamano": "🔮", "Figlio del Lupo": "🌕",
   "Contadino": "🌾", "Veggente": "🔭", "Puttana": "🏠",
   "Investigatore": "🕵️", "Muto": "🤐", "Prete": "✝️",
   "Kamikaze": "💥", "Amante": "💘", "Mitomane": "🎭",
-  "Folle": "🃏", "Corvo": "🐦‍⬛"
+  "Folle": "🃏", "Corvo": "🐦‍⬛",
+  "Miss Purple": "💜", "Ammaestratore": "🦁", "Boia": "🪓",
+  "Indemoniato": "😈", "Illusionista": "🪄", "Bugiardo": "🤥",
+  "Lupo Ciccione": "🍔", "Lupo Cieco": "🙈", "Lupo Mannaro": "🌕",
+  "Genio": "🧞‍♂️", "Medium": "🕯️", "Angelo": "😇",
+  "Giustiziere": "⚔️", "Massone": "🧱", "Mutaforma": "👽",
+  "Simbionte": "🧬", "Parassita": "🦠", "Mucca Mannara": "🐮"
 };
-const FACTION_COLOR = { lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0" };
+const FACTION_COLOR = {
+  lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0",
+  mannari: "#d4884a", alieni: "#44c4c4", parassita: "#88cc44", solitari: "#cc8844"
+};
 
 // ── Safe mode: stack annulla ultima azione ─────────────────────────────────
 // Ogni entry: { descrizione: string, applica: async () => void }
@@ -218,11 +227,17 @@ function renderNightDashboard(gameData, skipFirst) {
   const total         = wizardRuoli.length;
   const roleColor     = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
   const emoji         = ROLE_EMOJI[ruolo.nome] ?? "•";
+  const allPlayersWithRole = Object.entries(players).filter(([, p]) => p.gameRole === ruolo.nome && p.role !== "host");
+  const aliveWithRole      = activePlayers.filter(([, p]) => p.gameRole === ruolo.nome);
+  const powerUsed          = ruolo.flagUsato
+    ? allPlayersWithRole.some(([uid]) => players[uid]?.[ruolo.flagUsato] === true)
+    : false;
+  const allDead            = allPlayersWithRole.length > 0 && aliveWithRole.length === 0;
+
   const giocatoriMap  = Object.fromEntries(activePlayers);
-  const controlli     = ruolo.controlliNotte(giocatoriMap, azioni, stato);
-  const playersChips  = activePlayers
-    .filter(([, p]) => p.gameRole === ruolo.nome)
-    .map(([, p]) => `<span class="wiz-chip">${p.name}</span>`)
+  const controlli     = ruolo.controlliNotte(giocatoriMap, azioni, stato, { allPlayers: players, rolesDB });
+  const playersChips  = allPlayersWithRole
+    .map(([, p]) => `<span class="wiz-chip${p.isAlive ? "" : " wiz-chip--dead"}">${p.isAlive ? "" : "☠ "}${p.name}</span>`)
     .join("");
 
   // ── Dots di progresso
@@ -244,10 +259,42 @@ function renderNightDashboard(gameData, skipFirst) {
     </div>
     ${playersChips
       ? `<div class="wiz-players-box">
-           <span class="wiz-players-lbl">👁 Possono aprire gli occhi</span>
+           <span class="wiz-players-lbl">👁 Chiamali</span>
            <div class="wiz-chips">${playersChips}</div>
          </div>`
       : `<p class="wiz-no-players">Nessuno con questo ruolo in partita.</p>`}`;
+
+  // ── Simplified card: tutti morti o potere già usato
+  if (allDead || powerUsed) {
+    const msg = allDead
+      ? "💀 Questo ruolo non c'è più in gioco — chiamalo e vai avanti."
+      : "⏸ Questo ruolo ha già usato il suo potere — chiamalo e vai avanti.";
+    const infoP = document.createElement("p");
+    infoP.className = "wiz-simplified-msg";
+    infoP.textContent = msg;
+    card.appendChild(infoP);
+
+    const nav = document.createElement("div");
+    nav.className = "wiz-nav";
+    if (wizardStep > 0) {
+      const backBtn = document.createElement("button");
+      backBtn.className = "wiz-btn wiz-btn-back";
+      backBtn.textContent = "← Indietro";
+      backBtn.addEventListener("click", () => { wizardStep--; renderNightDashboard(lastGameData, skipFirst); });
+      nav.appendChild(backBtn);
+    }
+    const nextBtn = document.createElement("button");
+    nextBtn.className = "wiz-btn wiz-btn-next";
+    nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Completa notte →";
+    nextBtn.addEventListener("click", () => {
+      if (wizardStep < wizardRuoli.length - 1) { wizardStep++; } else { wizardDone = true; }
+      renderNightDashboard(lastGameData, lastSkipFirst);
+    });
+    nav.appendChild(nextBtn);
+    card.appendChild(nav);
+    container.appendChild(card);
+    return;
+  }
 
   // ── Controlli azione
   const ctrlDiv = document.createElement("div");
@@ -508,23 +555,38 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
   const wrapper = document.createElement("div");
   wrapper.className = "control-group";
 
+  // Controlli speciali non-picker
+  if (ctrl.tipo === "info") {
+    wrapper.innerHTML = `<p class="ctrl-info-msg">🔒 ${ctrl.testo}</p>`;
+    return wrapper;
+  }
+  if (ctrl.tipo === "info-auto") {
+    wrapper.innerHTML = `<p class="ctrl-info-msg ctrl-info-auto">⚡ ${ctrl.testo}</p>`;
+    return wrapper;
+  }
+
   const labelEl = document.createElement("p");
   labelEl.className = "control-label";
   labelEl.textContent = ctrl.label;
   wrapper.appendChild(labelEl);
 
-  const targets = ctrl.filtroTarget
-    ? activePlayers.filter(([, p]) => ctrl.filtroTarget(p))
+  // Se il controllo richiede giocatori morti, usa tutti i non-host
+  const candidatePlayers = ctrl.includeDead
+    ? Object.entries(players).filter(([, p]) => p.role !== "host")
     : activePlayers;
+
+  const targets = ctrl.filtroTarget
+    ? candidatePlayers.filter(([, p]) => ctrl.filtroTarget(p))
+    : candidatePlayers;
 
   function currentDisplay() {
     if (ctrl.tipo === "checkbox-multi") {
       const keys = Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k]);
-      return keys.length ? keys.map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ") : null;
+      return keys.length ? keys.map(uid => players[uid]?.name ?? uid).join(", ") : null;
     }
     if (ctrl.tipo === "radio") {
       const uid = azioni[ctrl.chiaveAzione];
-      return uid ? (activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid) : (ctrl.opzionale ? "Nessuno" : null);
+      return uid ? (players[uid]?.name ?? uid) : (ctrl.opzionale ? "Nessuno" : null);
     }
     if (ctrl.tipo === "select-ruolo") return azioni[ctrl.chiaveAzione] ?? null;
     return null;
@@ -559,7 +621,10 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
         .map(nome => ({ id: nome, label: nome }));
       multi = false;
     } else {
-      entries = targets.map(([uid, p]) => ({ id: uid, label: p.name, sublabel: p.isBot ? "🤖 Bot" : null }));
+      entries = targets.map(([uid, p]) => ({
+        id: uid, label: p.name,
+        sublabel: !p.isAlive ? "💀 Morto" : p.isBot ? "🤖 Bot" : null
+      }));
       multi = ctrl.tipo === "checkbox-multi";
     }
     const currentKeys = ctrl.tipo === "checkbox-multi"
@@ -633,23 +698,40 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
 function getTempFeedbackResult(ruolo, ctrl, tempFeedback, players) {
   const fb = tempFeedback?.[ruolo.id];
   if (!fb) return null;
-  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
-    const target = players[fb.targetUid];
-    if (!target) return null;
-    return fb.risultato === "lupo"
-      ? { text: `${target.name} è un Lupo`,    tipo: "danger",  icon: "🐺" }
-      : { text: `${target.name} è Innocente`,  tipo: "ok",      icon: "✅" };
-  }
-  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
-    const target = players[fb.targetUid];
-    if (!target) return null;
-    return fb.risultato === "esce"
-      ? { text: `${target.name} è uscito di casa`,  tipo: "warning", icon: "🚶" }
-      : { text: `${target.name} è rimasto in casa`, tipo: "ok",      icon: "🏠" };
-  }
-  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied") {
-    return fb.roleName ? { text: `Copia il ruolo: ${fb.roleName}`, tipo: "info", icon: "🎭" } : null;
-  }
+
+  const n = (uid) => players[uid]?.name ?? uid;
+
+  const investigaResult = (uid, ris) => ris === "lupo"
+    ? { text: `${n(uid)} è un Lupo`,      tipo: "danger",  icon: "🐺" }
+    : { text: `${n(uid)} è Innocente`,    tipo: "ok",      icon: "✅" };
+  const spiaNotte = (uid, ris) => ris === "esce"
+    ? { text: `${n(uid)} è uscito`,       tipo: "warning", icon: "🚶" }
+    : { text: `${n(uid)} è restato`,      tipo: "ok",      icon: "🏠" };
+
+  if (["Veggente","Mutaforma"].includes(ruolo.nome) && (ctrl.chiaveAzione === "investigated" || ctrl.chiaveAzione === "mutaformaSubTarget") && fb.risultato)
+    return investigaResult(fb.targetUid, fb.risultato);
+  if (["Investigatore","Mutaforma"].includes(ruolo.nome) && (ctrl.chiaveAzione === "watched" || ctrl.chiaveAzione === "mutaformaSubTarget") && fb.risultato)
+    return spiaNotte(fb.targetUid, fb.risultato);
+  if (["Medium","Mutaforma"].includes(ruolo.nome) && (ctrl.chiaveAzione === "mediumTarget" || ctrl.chiaveAzione === "mutaformaSubTarget") && fb.fazione)
+    return { text: `${n(fb.targetUid)}: fazione ${fb.fazione}`, tipo: "info", icon: "🕯️" };
+  if (["Mitomane","Simbionte","Genio"].includes(ruolo.nome) && fb.roleName)
+    return { text: `Ruolo: ${fb.roleName}`, tipo: "info", icon: "🎭" };
+  if (ruolo.nome === "Lupo Cieco" && fb.risultato)
+    return fb.risultato === "si"
+      ? { text: "Lupo nel trio rilevato",    tipo: "danger",  icon: "🐺" }
+      : { text: "Nessun lupo nel trio",      tipo: "ok",      icon: "✅" };
+  if (ruolo.nome === "Boia" && fb.risultato)
+    return fb.risultato === "ok"
+      ? { text: `${n(fb.targetUid)} → ✅ Indovinato`,  tipo: "danger",  icon: "🪓" }
+      : { text: `Sbagliato — il Boia muore`, tipo: "warning", icon: "🪓" };
+  if (ruolo.nome === "Bugiardo" && fb.ruoloScoperto)
+    return { text: `${n(fb.targetUid)} era: ${fb.ruoloScoperto}`, tipo: "info", icon: "🤥" };
+  if (ruolo.nome === "Miss Purple" && fb.conteggio !== undefined)
+    return { text: `${fb.conteggio} lupo/i in gioco`, tipo: fb.conteggio > 0 ? "danger" : "ok", icon: "💜" };
+  if (ruolo.nome === "Lupo Mannaro" && fb.risultato)
+    return fb.risultato === "ok"
+      ? { text: `${n(fb.targetUid)} → ✅ Caccia riuscita`, tipo: "danger", icon: "🌕" }
+      : { text: `Ruolo sbagliato — caccia fallita`,        tipo: "info",   icon: "🌕" };
   return null;
 }
 
@@ -658,39 +740,113 @@ function buildTempFeedbackPayload(ruolo, ctrl, singleValue, result) {
     return { targetUid: singleValue, risultato: result.tipo === "danger" ? "lupo" : "innocente" };
   if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched")
     return { targetUid: singleValue, risultato: result.tipo === "warning" ? "esce" : "resta" };
-  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied")
+  if (["Mitomane","Simbionte","Genio"].includes(ruolo.nome))
     return { roleName: singleValue };
+  if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget")
+    return { targetUid: singleValue, fazione: result.fazione };
+  if (ruolo.nome === "Lupo Cieco" && ctrl.chiaveAzione === "ciecoTarget")
+    return { risultato: result.tipo === "danger" ? "si" : "no" };
+  if (ruolo.nome === "Boia" && ctrl.chiaveAzione === "boiaTarget")
+    return { targetUid: singleValue, risultato: result.tipo === "danger" ? "ok" : "fail" };
+  if (ruolo.nome === "Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget")
+    return { targetUid: singleValue, ruoloScoperto: result.ruoloScoperto };
+  if (ruolo.nome === "Miss Purple")
+    return { conteggio: result.conteggio };
+  if (ruolo.nome === "Lupo Mannaro" && ctrl.chiaveAzione === "mannaro_target")
+    return { targetUid: singleValue, risultato: result.tipo === "danger" ? "ok" : "fail" };
+  if (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget") {
+    if (result.tipo === "danger" || result.tipo === "ok") {
+      if (result.icon === "🐺" || result.icon === "✅") return { targetUid: singleValue, risultato: result.tipo === "danger" ? "lupo" : "innocente" };
+      if (result.icon === "🚶" || result.icon === "🏠") return { targetUid: singleValue, risultato: result.tipo === "warning" ? "esce" : "resta" };
+    }
+    if (result.fazione) return { targetUid: singleValue, fazione: result.fazione };
+  }
   return null;
 }
 
 // ── Night result (live, prima del round-trip Firebase) ────────────────────────
 function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stato) {
-  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
-    if (!newValue) return null;
-    const target = players[newValue];
+  if (!newValue) return null;
+  const target = players[newValue];
+
+  // Veggente / Mutaforma-come-Veggente
+  if ((ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") ||
+      (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget" && players[azioni.mutaformaTarget]?.gameRole === "Veggente")) {
     if (!target) return null;
-    const isCursed   = azioni["sciamanoTarget"] === newValue;
-    const targetRole = Object.values(ROLES).find(r => r.nome === target.gameRole);
-    const isLupo     = targetRole?.fazione === "lupi" || isCursed;
+    const isSciamano = azioni["sciamanoTarget"] === newValue;
+    const roleObj    = Object.values(ROLES).find(r => r.nome === target.gameRole);
+    const baseFaz    = roleObj?.fazioneApparente ?? roleObj?.fazione ?? "villaggio";
+    const isLupo     = isSciamano ? baseFaz !== "lupi" : baseFaz === "lupi";
     return isLupo
-      ? { text: `${target.name} è un Lupo`,    tipo: "danger",  icon: "🐺" }
-      : { text: `${target.name} è Innocente`,  tipo: "ok",      icon: "✅" };
+      ? { text: `${target.name} è un Lupo`,   tipo: "danger", icon: "🐺" }
+      : { text: `${target.name} è Innocente`, tipo: "ok",     icon: "✅" };
   }
-  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
-    if (!newValue) return null;
-    const target = players[newValue];
+
+  // Investigatore / Mutaforma-come-Investigatore
+  if ((ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") ||
+      (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget" && players[azioni.mutaformaTarget]?.gameRole === "Investigatore")) {
     if (!target) return null;
-    const esceNotte = playerEsceNotte(newValue, target, {
-      saved: azioni["saved"] ?? null, lovers: azioni["lovers"] ?? {}
-    }, stato ?? {});
-    return esceNotte
-      ? { text: `${target.name} è uscito di casa`,  tipo: "warning", icon: "🚶" }
-      : { text: `${target.name} è rimasto in casa`, tipo: "ok",      icon: "🏠" };
+    const esce = playerEsceNotte(newValue, target, { saved: azioni["saved"] ?? null, lovers: azioni["lovers"] ?? {} }, stato ?? {});
+    return esce
+      ? { text: `${target.name} è uscito di casa`,   tipo: "warning", icon: "🚶" }
+      : { text: `${target.name} è rimasto in casa`,  tipo: "ok",      icon: "🏠" };
   }
-  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied") {
-    if (!newValue) return null;
-    return { text: `Copia il ruolo: ${newValue}`, tipo: "info", icon: "🎭" };
+
+  // Medium / Mutaforma-come-Medium
+  if ((ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget") ||
+      (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget" && players[azioni.mutaformaTarget]?.gameRole === "Medium")) {
+    if (!target) return null;
+    const roleObj = Object.values(ROLES).find(r => r.nome === target.gameRole);
+    const fazione = roleObj?.fazione ?? "villaggio";
+    return { text: `${target.name}: fazione ${fazione}`, tipo: "info", icon: "🕯️", fazione };
   }
+
+  // Lupo Cieco — il trio viene calcolato approssimativamente lato client
+  if (ruolo.nome === "Lupo Cieco" && ctrl.chiaveAzione === "ciecoTarget") {
+    const viviUids = Object.entries(players).filter(([, p]) => p.isAlive && p.role !== "host").map(([u]) => u);
+    const idx = viviUids.indexOf(newValue);
+    const trio = [
+      viviUids[(idx - 1 + viviUids.length) % viviUids.length],
+      newValue,
+      viviUids[(idx + 1) % viviUids.length]
+    ].filter((u, i, a) => a.indexOf(u) === i);
+    const hasLupo = trio.some(u => {
+      const r = Object.values(ROLES).find(rr => rr.nome === players[u]?.gameRole);
+      return (r?.fazioneApparente ?? r?.fazione) === "lupi";
+    });
+    return hasLupo
+      ? { text: "Lupo nel trio rilevato",  tipo: "danger", icon: "🙈" }
+      : { text: "Nessun lupo nel trio",    tipo: "ok",     icon: "🙈" };
+  }
+
+  // Boia (feedback su boiaTarget dopo aver selezionato anche boiaRole)
+  if (ruolo.nome === "Boia" && ctrl.chiaveAzione === "boiaTarget") {
+    if (!target || !azioni.boiaRole) return null;
+    const corretto = target.gameRole === azioni.boiaRole;
+    return corretto
+      ? { text: `${target.name} → ✅ Indovinato`,    tipo: "danger",  icon: "🪓" }
+      : { text: `Sbagliato — il Boia muore`,          tipo: "warning", icon: "🪓" };
+  }
+
+  // Bugiardo
+  if (ruolo.nome === "Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget") {
+    if (!target) return null;
+    return { text: `${target.name} era: ${target.gameRole}`, tipo: "info", icon: "🤥", ruoloScoperto: target.gameRole };
+  }
+
+  // Lupo Mannaro (feedback su mannaro_target dopo aver selezionato mannaro_role)
+  if (ruolo.nome === "Lupo Mannaro" && ctrl.chiaveAzione === "mannaro_target") {
+    if (!target || !azioni.mannaro_role) return null;
+    const corretto = target.gameRole === azioni.mannaro_role;
+    return corretto
+      ? { text: `${target.name} → ✅ Caccia riuscita`, tipo: "danger",  icon: "🌕" }
+      : { text: `Ruolo sbagliato — caccia fallita`,     tipo: "info",    icon: "🌕" };
+  }
+
+  // Mitomane / Simbionte / Genio (select-ruolo)
+  if (["Mitomane","Simbionte","Genio"].includes(ruolo.nome) && ctrl.tipo === "select-ruolo")
+    return { text: `Ruolo: ${newValue}`, tipo: "info", icon: "🎭" };
+
   return null;
 }
 
@@ -1020,7 +1176,7 @@ async function handleEndGame() {
   const pSnap   = await get(ref(db, `games/${gameCode}/players`));
   const players = pSnap.val() ?? {};
 
-  const updates = { nightActions: null, dayActions: null, "state/status": "ended" };
+  const updates = { nightActions: null, dayActions: null, tempFeedback: null, log: null, "state/status": "ended" };
   for (const uid in players) {
     if (players[uid].role !== "host") {
       updates[`players/${uid}/isAlive`] = true;

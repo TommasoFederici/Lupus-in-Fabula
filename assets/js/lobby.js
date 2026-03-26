@@ -133,7 +133,8 @@ async function setupLobby() {
     document.getElementById("game-code").textContent = gameCode;
 
     renderPlayers(gameData.players ?? {}, gameData.host, devMode);
-    await loadRoles(gameData.roles ?? {});
+    loadRoles(gameData.roles ?? {});
+    initRolesInFirebase(); // una tantum, no-op se già eseguito
 
     // Tab Opzioni visibile solo all'host
     const settingsTab = document.getElementById("tab-btn-settings");
@@ -226,24 +227,36 @@ async function removeBot(uid) {
 }
 
 // ── Roles — grouped by category ───────────────────────────────────────────────
-async function loadRoles(dbRoles) {
+// Inizializzazione Firebase dei ruoli mancanti — eseguita una volta sola,
+// separata dal render per evitare race condition con onValue.
+let rolesInitialized = false;
+async function initRolesInFirebase() {
+  if (rolesInitialized || !isHost) return;
+  rolesInitialized = true;
+  const updates = {};
+  const snap = await get(ref(db, `games/${gameCode}/roles`));
+  const existing = snap.val() ?? {};
+  for (const ruolo of Object.values(ROLES)) {
+    if (!existing[ruolo.nome]) {
+      updates[ruolo.nome] = { count: ruolo.defaultCount, description: ruolo.descrizione };
+    }
+  }
+  if (Object.keys(updates).length > 0) {
+    await update(ref(db, `games/${gameCode}/roles`), updates);
+  }
+}
+
+// Render puro (sincrono) — nessun await, nessun Firebase write.
+function loadRoles(dbRoles) {
   const container = document.getElementById("roles-list");
   if (!container) return;
   container.innerHTML = "";
 
-  // Mappa nome → oggetto role per lookup rapido
-  const roleByName = {};
-  for (const r of Object.values(ROLES)) roleByName[r.nome] = r;
-
   for (const cat of CATEGORIES) {
-    // Categoria da roleData.js (fonte unica di verità per la UI),
-    // con fallback a roles.js per retrocompatibilità
-    const ruoliCat = Object.values(ROLES).filter(r =>
-      (ROLE_DATA[r.nome]?.categoria ?? r.fazione) === cat.id
-    );
+    // Usa SOLO ROLE_DATA.categoria come fonte di verità per la UI
+    const ruoliCat = Object.values(ROLES).filter(r => ROLE_DATA[r.nome]?.categoria === cat.id);
     if (ruoliCat.length === 0) continue;
 
-    // Intestazione categoria
     const header = document.createElement("div");
     header.className = "role-category-header";
     header.innerHTML = `
@@ -251,14 +264,12 @@ async function loadRoles(dbRoles) {
       <span class="role-category-label" style="color:${cat.color}">${cat.label}</span>`;
     container.appendChild(header);
 
-    // Righe ruoli
     for (const ruolo of ruoliCat) {
       const wikiData = ROLE_DATA[ruolo.nome];
       const row = document.createElement("div");
       row.className = "role-row";
-      row.dataset.faction = ROLE_DATA[ruolo.nome]?.categoria ?? ruolo.fazione;
+      row.dataset.faction = wikiData?.categoria ?? ruolo.fazione;
 
-      // ── Riga superiore: emoji + nome + [ⓘ]
       const top = document.createElement("div");
       top.className = "role-row-top";
 
@@ -279,14 +290,12 @@ async function loadRoles(dbRoles) {
       top.append(emoji, name, infoBtn);
       row.appendChild(top);
 
-      // ── Riga inferiore: descrizione breve + contatore
       const bottom = document.createElement("div");
       bottom.className = "role-row-bottom";
 
       const desc = document.createElement("span");
       desc.className = "role-row-desc";
       desc.textContent = ruolo.descrizione;
-
       bottom.appendChild(desc);
 
       if (isHost) {
@@ -310,13 +319,6 @@ async function loadRoles(dbRoles) {
 
         controls.append(minus, countEl, plus);
         bottom.appendChild(controls);
-
-        // Inizializza Firebase se assente
-        const roleRef = ref(db, `games/${gameCode}/roles/${ruolo.nome}`);
-        const existing = await get(roleRef);
-        if (!existing.exists()) {
-          set(roleRef, { count: ruolo.defaultCount, description: ruolo.descrizione });
-        }
       } else {
         const countEl = document.createElement("span");
         countEl.id = `role-count-${ruolo.nome}`;

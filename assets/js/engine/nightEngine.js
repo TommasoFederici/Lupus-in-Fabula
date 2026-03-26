@@ -1,25 +1,27 @@
 // assets/js/engine/nightEngine.js
-// Pipeline di risoluzione della notte, senza switch-case sui ruoli.
+// Pipeline di risoluzione della notte.
 //
 // Ordine di risoluzione:
-//   1. Raccolta intent  — ogni ruolo chiama processaNotte() per prioritaNotte
-//   2. Salvataggio      — Puttana cancella _morteNottePending
-//   3. Trasformazione   — Figlio del Lupo → Lupo invece di morire
-//   4. Applicazione morti
-//   5. Catena Amanti    — se un morto era in un gruppo, tutti muoiono
-//   6. Pulizia flag temporanei
-//   7. Scrittura Firebase
-//   8. Log eventi
+//   0. Pre-pass Lupo Ciccione  — marca i vicini con _ciccione
+//   1. Raccolta intent          — ogni ruolo chiama processaNotte() per prioritaNotte
+//                                 (l'Illusionista blocca i ruoli successivi se targeting)
+//   2. Salvataggio Puttana      — cancella _morteNottePending sul bersaglio ospitato
+//   3. Trasformazione Figlio    — Figlio del Lupo → Lupo invece di morire
+//   4. Immunità Mannari         — Lupo Mannaro e Mucca Mannara non muoiono per mano lupi
+//   5. Applicazione morti
+//   6. Aggiornamento infected   — segna i giocatori infettati dal Parassita
+//   7. Catena Amanti
+//   8. Check win conditions
+//   9. Pulizia flag temporanei
+//  10. Scrittura Firebase
+//  11. Log eventi
 
 import { db } from "../firebase.js";
-import {
-  ref, get, update
-} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import { ROLES } from "./roles.js";
+import { ref, get, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { ROLES, checkWinConditions } from "./roles.js";
 import { logEventi } from "./eventLog.js";
 
 export async function processaNotte(gameCode) {
-  // Leggo tutto in parallelo
   const [actionsSnap, playersSnap, stateSnap, rolesSnap] = await Promise.all([
     get(ref(db, `games/${gameCode}/nightActions`)),
     get(ref(db, `games/${gameCode}/players`)),
@@ -32,11 +34,10 @@ export async function processaNotte(gameCode) {
   const stato     = stateSnap.val()       ?? {};
   const rolesDB   = rolesSnap.exists()    ? rolesSnap.val()    : {};
 
-  // Stato locale mutabile: lavoriamo su una copia
+  // Stato locale mutabile
   const sl = {};
   for (const uid in giocatori) sl[uid] = { ...giocatori[uid] };
 
-  // Ruoli attivi in questa partita, ordinati per prioritaNotte
   const nomiAttivi = Object.keys(rolesDB).filter(n => (rolesDB[n]?.count ?? 0) > 0);
   const ruoliNotte = Object.values(ROLES)
     .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
@@ -44,8 +45,28 @@ export async function processaNotte(gameCode) {
 
   const tuttiLog = [];
 
-  // ── 1. Raccolta intent ──────────────────────────────────────────────────────
+  // ── 0. Pre-pass Lupo Ciccione ────────────────────────────────────────────
+  const viviList = Object.keys(sl).filter(uid => sl[uid].isAlive && sl[uid].role !== "host");
+  for (const uid of viviList) {
+    if (sl[uid].gameRole === "Lupo Ciccione") {
+      const idx   = viviList.indexOf(uid);
+      const left  = viviList[(idx - 1 + viviList.length) % viviList.length];
+      const right = viviList[(idx + 1) % viviList.length];
+      if (left  !== uid) sl[left]._ciccione  = true;
+      if (right !== uid) sl[right]._ciccione = true;
+    }
+  }
+
+  // ── 1. Raccolta intent ───────────────────────────────────────────────────
   for (const ruolo of ruoliNotte) {
+    // Blocco Illusionista: se tutti i giocatori con questo ruolo sono bloccati, salta
+    const roleUids  = Object.keys(sl).filter(u => sl[u].gameRole === ruolo.nome && sl[u].isAlive);
+    const tuttiBloccati = roleUids.length > 0 && roleUids.every(u => sl[u]._bloccato);
+    if (tuttiBloccati) {
+      tuttiLog.push({ tipo: "bloccato_da_illusionista", ruolo: ruolo.nome, notte: stato.nightNumber, timestamp: Date.now() });
+      continue;
+    }
+
     const { aggiornamenti, logEventi: ev } = ruolo.processaNotte(azioni, sl, stato);
     for (const { uid, campi } of aggiornamenti) {
       sl[uid] = { ...sl[uid], ...campi };
@@ -53,49 +74,49 @@ export async function processaNotte(gameCode) {
     tuttiLog.push(...ev);
   }
 
-  // ── 2. Salvataggio Puttana ──────────────────────────────────────────────────
+  // ── 2. Salvataggio Puttana ───────────────────────────────────────────────
   const savedUid = azioni.saved ?? null;
   if (savedUid && sl[savedUid]?._morteNottePending) {
     sl[savedUid]._morteNottePending = false;
-    tuttiLog.push({
-      tipo: "puttana_salvataggio_effettivo",
-      bersaglio: savedUid,
-      notte: stato.nightNumber,
-      timestamp: Date.now()
-    });
+    tuttiLog.push({ tipo: "puttana_salvataggio_effettivo", bersaglio: savedUid, notte: stato.nightNumber, timestamp: Date.now() });
   }
 
-  // ── 3. Trasformazione Figlio del Lupo ───────────────────────────────────────
+  // ── 3. Trasformazione Figlio del Lupo ────────────────────────────────────
   for (const uid in sl) {
     if (sl[uid]._morteNottePending && giocatori[uid]?.gameRole === "Figlio del Lupo") {
       sl[uid]._morteNottePending = false;
       sl[uid].gameRole = "Lupo";
-      tuttiLog.push({
-        tipo: "figlio_diventa_lupo",
-        uid,
-        notte: stato.nightNumber,
-        timestamp: Date.now()
-      });
+      tuttiLog.push({ tipo: "figlio_diventa_lupo", uid, notte: stato.nightNumber, timestamp: Date.now() });
     }
   }
 
-  // ── 4. Applicazione morti ───────────────────────────────────────────────────
+  // ── 4. Immunità Mannari (non muoiono per mano dei lupi) ──────────────────
+  const killedByWolves = Object.keys(azioni.killed || {}).filter(u => azioni.killed[u]);
+  for (const uid of killedByWolves) {
+    if (["Lupo Mannaro", "Mucca Mannara"].includes(giocatori[uid]?.gameRole)) {
+      sl[uid]._morteNottePending = false;
+    }
+  }
+  // Giustiziere ignora le protezioni (_nonBloccabile) — già gestito dall'ordine di priorità
+
+  // ── 5. Applicazione morti ─────────────────────────────────────────────────
   const mortiNotte = [];
   for (const uid in sl) {
     if (sl[uid]._morteNottePending) {
       sl[uid].isAlive = false;
       sl[uid]._morteNottePending = false;
       mortiNotte.push(uid);
-      tuttiLog.push({
-        tipo: "morte_notte",
-        uid,
-        notte: stato.nightNumber,
-        timestamp: Date.now()
-      });
+      tuttiLog.push({ tipo: "morte_notte", uid, notte: stato.nightNumber, timestamp: Date.now() });
     }
   }
 
-  // ── 5. Catena Amanti ────────────────────────────────────────────────────────
+  // ── 6. Aggiornamento infected ────────────────────────────────────────────
+  const infettatiNotte = Object.keys(sl).filter(u => sl[u]._infected && !giocatori[u]?._infected);
+  // Merge con infected già in stato
+  const infectedMap = { ...(stato.infected ?? {}) };
+  for (const uid of infettatiNotte) infectedMap[uid] = true;
+
+  // ── 7. Catena Amanti ──────────────────────────────────────────────────────
   const lovers = Object.keys(azioni.lovers || {});
   if (lovers.length > 0) {
     const mortoAmante = mortiNotte.find(uid => lovers.includes(uid));
@@ -103,25 +124,32 @@ export async function processaNotte(gameCode) {
       for (const lUid of lovers) {
         if (sl[lUid]?.isAlive) {
           sl[lUid].isAlive = false;
-          tuttiLog.push({
-            tipo: "amante_muore",
-            uid: lUid,
-            perColpaDi: mortoAmante,
-            notte: stato.nightNumber,
-            timestamp: Date.now()
-          });
+          tuttiLog.push({ tipo: "amante_muore", uid: lUid, perColpaDi: mortoAmante, notte: stato.nightNumber, timestamp: Date.now() });
         }
       }
     }
   }
 
-  // ── 6. Pulizia flag temporanei ──────────────────────────────────────────────
-  for (const uid in sl) {
-    delete sl[uid]._morteNottePending;
-    delete sl[uid]._sciamanoMaledetto;
+  // ── 8. Check win conditions ───────────────────────────────────────────────
+  // Ricostruisci players da sl per il check
+  const playersPerCheck = {};
+  for (const uid in sl) playersPerCheck[uid] = { ...giocatori[uid], ...sl[uid] };
+  const vincitore = checkWinConditions(playersPerCheck, { ...stato, infected: infectedMap });
+  if (vincitore) {
+    tuttiLog.push({ tipo: "vittoria", vincitore, notte: stato.nightNumber, timestamp: Date.now() });
   }
 
-  // ── 7. Scrittura Firebase ───────────────────────────────────────────────────
+  // ── 9. Pulizia flag temporanei ────────────────────────────────────────────
+  for (const uid in sl) {
+    delete sl[uid]._morteNottePending;
+    delete sl[uid]._sciamanoInsinuato;
+    delete sl[uid]._ciccione;
+    delete sl[uid]._bloccato;
+    delete sl[uid]._infected; // spostato in stato.infected
+    delete sl[uid]._nonBloccabile;
+  }
+
+  // ── 10. Scrittura Firebase ────────────────────────────────────────────────
   const updates = {};
   for (const uid in sl) {
     const orig = giocatori[uid];
@@ -134,52 +162,77 @@ export async function processaNotte(gameCode) {
     }
   }
   updates["state/nightNumber"] = (stato.nightNumber ?? 1) + 1;
+  updates["state/infected"]    = Object.keys(infectedMap).length > 0 ? infectedMap : null;
+  if (vincitore) updates["state/winner"] = vincitore;
   updates["nightActions"]      = null;
   updates["tempFeedback"]      = null;
 
   await update(ref(db, `games/${gameCode}`), updates);
 
-  // ── 8. Log ──────────────────────────────────────────────────────────────────
+  // ── 11. Log ───────────────────────────────────────────────────────────────
   await logEventi(gameCode, tuttiLog);
 
-  // Restituisce riepilogo testuale per il modal "Alba"
-  return buildRiepilogo(mortiNotte, giocatori, tuttiLog);
+  return buildRiepilogo(mortiNotte, giocatori, tuttiLog, vincitore);
 }
 
-// Costruisce il riepilogo strutturato mostrato al narratore dopo l'alba.
-// Ogni riga ha { testo, tipo } dove tipo guida la colorazione nel modal:
-//   "morte"     → rosso
-//   "trasforma" → oro
-//   "info"      → grigio chiaro
-//   "ok"        → verde
-function buildRiepilogo(mortiUids, giocatori, eventi) {
-  const nome = (uid) => giocatori[uid]?.name ?? uid;
+// ── Riepilogo testuale per il modal "Alba" ────────────────────────────────────
+function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
+  const nome  = (uid) => giocatori[uid]?.name ?? uid;
   const righe = [];
 
   const nomiMorti = mortiUids.map(nome);
-  if (nomiMorti.length > 0) {
-    righe.push({ testo: `Stanotte sono morti: ${nomiMorti.join(", ")}`, tipo: "morte" });
-  } else {
-    righe.push({ testo: "Stanotte non è morto nessuno.", tipo: "ok" });
-  }
+  righe.push(nomiMorti.length > 0
+    ? { testo: `Stanotte sono morti: ${nomiMorti.join(", ")}`, tipo: "morte" }
+    : { testo: "Stanotte non è morto nessuno.", tipo: "ok" }
+  );
 
   const figlio = eventi.find(e => e.tipo === "figlio_diventa_lupo");
-  if (figlio) righe.push({ testo: `🐺 ${nome(figlio.uid)} si è trasformato in Lupo!`, tipo: "trasforma" });
+  if (figlio) righe.push({ testo: `🌕 ${nome(figlio.uid)} si è trasformato in Lupo!`, tipo: "trasforma" });
 
-  const amanti = eventi.filter(e => e.tipo === "amante_muore");
-  amanti.forEach(e => righe.push({ testo: `💔 ${nome(e.uid)} muore (amante di ${nome(e.perColpaDi)})`, tipo: "morte" }));
+  eventi.filter(e => e.tipo === "amante_muore").forEach(e =>
+    righe.push({ testo: `💔 ${nome(e.uid)} muore (amante di ${nome(e.perColpaDi)})`, tipo: "morte" })
+  );
 
-  const veg = eventi.find(e => e.tipo === "veggente_risposta");
+  const veg = eventi.find(e => e.tipo === "veggente_risposta" && !e.viaMutaforma);
   if (veg) righe.push({
-    testo: `🔮 Veggente → ${nome(veg.bersaglio)}: ${veg.risultato === "lupo" ? "LUPO 🐺" : "Innocente ✅"}`,
+    testo: `🔭 Veggente → ${nome(veg.bersaglio)}: ${veg.risultato === "lupo" ? "LUPO 🐺" : "Innocente ✅"}`,
     tipo: "info"
   });
 
-  const inv = eventi.find(e => e.tipo === "investigatore_risposta");
+  const inv = eventi.find(e => e.tipo === "investigatore_risposta" && !e.viaMutaforma);
   if (inv) righe.push({
-    testo: `🔍 Investigatore → ${nome(inv.bersaglio)}: ${inv.risultato === "esce" ? "Esce di notte 🚶" : "Resta a casa 🏠"}`,
+    testo: `🕵️ Investigatore → ${nome(inv.bersaglio)}: ${inv.risultato === "esce" ? "Esce 🚶" : "Resta 🏠"}`,
     tipo: "info"
   });
+
+  const mp = eventi.find(e => e.tipo === "missPurple_risposta");
+  if (mp) righe.push({ testo: `💜 Miss Purple: ${mp.conteggio} lupo/i in gioco`, tipo: "info" });
+
+  const med = eventi.find(e => e.tipo === "medium_risposta" && !e.viaMutaforma);
+  if (med) righe.push({ testo: `🕯️ Medium → ${nome(med.bersaglio)}: fazione ${med.fazione}`, tipo: "info" });
+
+  const cieco = eventi.find(e => e.tipo === "lupoCieco_risposta");
+  if (cieco) righe.push({ testo: `🙈 Lupo Cieco: ${cieco.risultato === "si" ? "Lupo trovato nel trio 🐺" : "Nessun lupo nel trio ✅"}`, tipo: "info" });
+
+  const boia = eventi.find(e => e.tipo === "boia_esecuzione");
+  if (boia) righe.push({ testo: `🪓 Boia → ${nome(boia.bersaglio)} (${boia.ruoloDichiarato}): ${boia.indovinato ? "✅ Corretto" : "❌ Sbagliato"}`, tipo: boia.indovinato ? "morte" : "info" });
+
+  const bug = eventi.find(e => e.tipo === "bugiardo_risposta");
+  if (bug) righe.push({ testo: `🤥 Bugiardo → ${nome(bug.bersaglio)}: era ${bug.ruoloScoperto}`, tipo: "info" });
+
+  const ang = eventi.find(e => e.tipo === "angelo_resurrezione");
+  if (ang) righe.push({ testo: `😇 Angelo ha resuscitato ${nome(ang.bersaglio)}`, tipo: "ok" });
+
+  const gio = eventi.find(e => e.tipo === "giustiziere_esecuzione");
+  if (gio) righe.push({ testo: `⚔️ Giustiziere ha giustiziato ${nome(gio.bersaglio)}`, tipo: "morte" });
+
+  const mann = eventi.find(e => e.tipo === "mannaro_caccia");
+  if (mann) righe.push({ testo: `🌕 Lupo Mannaro → ${nome(mann.bersaglio)} (${mann.ruoloDichiarato}): ${mann.indovinato ? "✅ Caccia riuscita" : "❌ Mancato"}`, tipo: mann.indovinato ? "morte" : "info" });
+
+  const par = eventi.filter(e => e.tipo === "parassita_infetta");
+  if (par.length) righe.push({ testo: `🦠 Parassita ha infettato: ${par.map(e => nome(e.vittima)).join(", ")}`, tipo: "info" });
+
+  if (vincitore) righe.push({ testo: `🏆 VITTORIA: ${vincitore.toUpperCase()}`, tipo: "trasforma" });
 
   return righe;
 }
