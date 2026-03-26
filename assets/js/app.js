@@ -4,6 +4,86 @@ import { ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import * as ui from "./ui.js";
 
+// ── Partite salvate in localStorage ───────────────────────────────────────────
+const LS_KEY = "lif_games";
+
+function getSavedGames() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) ?? []; }
+  catch { return []; }
+}
+
+function saveGame(gameCode, name) {
+  const games = getSavedGames().filter(g => g.gameCode !== gameCode);
+  games.unshift({ gameCode, name });
+  localStorage.setItem(LS_KEY, JSON.stringify(games.slice(0, 10)));
+}
+
+function removeGame(gameCode) {
+  const games = getSavedGames().filter(g => g.gameCode !== gameCode);
+  localStorage.setItem(LS_KEY, JSON.stringify(games));
+}
+
+// ── Render partite attive sulla home ──────────────────────────────────────────
+async function renderActiveGames() {
+  const saved = getSavedGames();
+  const section = document.getElementById("active-games");
+  const list    = document.getElementById("active-games-list");
+  if (!section || !list || saved.length === 0) return;
+
+  let user;
+  try { user = await requireAuth(); } catch { return; }
+
+  section.style.display = "block";
+  list.innerHTML = "";
+
+  for (const { gameCode, name } of saved) {
+    const snap = await get(ref(db, `games/${gameCode}`));
+
+    if (!snap.exists()) {
+      removeGame(gameCode);
+      continue;
+    }
+
+    const gameData = snap.val();
+    const status   = gameData.state?.status ?? "waiting";
+    const inGame   = !!gameData.players?.[user.uid];
+
+    if (!inGame) {
+      removeGame(gameCode);
+      continue;
+    }
+
+    const statusLabel = { waiting: "In lobby", running: "In corso", ended: "Terminata" }[status] ?? status;
+    const statusClass = { waiting: "status--waiting", running: "status--running", ended: "status--ended" }[status] ?? "";
+    const isHost      = gameData.players[user.uid]?.role === "host";
+    const dest        = status === "running" ? `game?gameCode=${gameCode}` : `lobby?gameCode=${gameCode}`;
+
+    const row = document.createElement("div");
+    row.className = "active-game-row";
+    row.innerHTML = `
+      <span class="active-game-code">${gameCode}</span>
+      <div class="active-game-info">
+        <strong>${name}</strong>
+        ${isHost ? "Narratore" : "Giocatore"} · <span class="active-game-status ${statusClass}">${statusLabel}</span>
+      </div>
+      <button class="btn-rejoin">Rientra</button>
+      <button class="btn-remove-game" title="Rimuovi">✕</button>`;
+
+    row.querySelector(".btn-rejoin").addEventListener("click", () => {
+      window.location.href = dest;
+    });
+    row.querySelector(".btn-remove-game").addEventListener("click", () => {
+      removeGame(gameCode);
+      row.remove();
+      if (list.children.length === 0) section.style.display = "none";
+    });
+
+    list.appendChild(row);
+  }
+
+  if (list.children.length === 0) section.style.display = "none";
+}
+
 // Aspetta che Firebase completi il login anonimo.
 // Su un nuovo dispositivo onAuthStateChanged spara null prima che signInAnonymously
 // completi: ignoriamo i null e aspettiamo il vero user (con timeout di sicurezza).
@@ -50,6 +130,7 @@ document.getElementById("new-game").addEventListener("click", async () => {
       }
     });
 
+    saveGame(gameCode, playerName);
     window.location.href = `lobby?gameCode=${gameCode}`;
 
   } catch (err) {
@@ -103,6 +184,7 @@ document.getElementById("join-game").addEventListener("click", async () => {
       isMuted: false
     });
 
+    saveGame(gameCode, playerName);
     window.location.href = `lobby?gameCode=${gameCode}`;
 
   } catch (err) {
@@ -110,3 +192,6 @@ document.getElementById("join-game").addEventListener("click", async () => {
     await ui.alert("Errore nell'unirsi alla partita.", { icon: "❌" });
   }
 });
+
+// ── Mostra partite salvate all'avvio ──────────────────────────────────────────
+renderActiveGames();
