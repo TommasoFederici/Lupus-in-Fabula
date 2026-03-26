@@ -750,3 +750,94 @@ button:active { transform: translateY(0); }
   color: #e0ecff;
   margin-top: 1rem;
 }
+
+/* ── Night Recap ─────────────────────────────────────────────────────────── */
+.recap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.recap-bar {
+  background: rgba(30,40,30,0.7);
+  border: 1px solid rgba(80,200,80,0.3);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.recap-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+.recap-bar-header:hover { background: rgba(80,200,80,0.07); }
+
+.recap-bar-title {
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  color: #80cc80;
+  font-weight: 700;
+}
+
+.recap-bar-expand {
+  font-size: 0.75rem;
+  color: var(--text-sec);
+  opacity: 0.7;
+}
+
+.recap-full {
+  border-top: 1px solid rgba(255,255,255,0.07);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.recap-section { display: flex; flex-direction: column; gap: 0.3rem; }
+.recap-section-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-sec);
+  opacity: 0.6;
+  margin-bottom: 0.2rem;
+}
+
+.recap-action-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.recap-role-name  { font-weight: 600; white-space: nowrap; }
+.recap-action-value { color: var(--text-sec); text-align: right; }
+.recap-action-value em { font-style: normal; color: #a0c8e0; }
+
+.recap-outcome-row {
+  font-size: 0.82rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+.recap-death     { color: #e08080; background: rgba(184,48,48,0.10); }
+.recap-transform { color: #c9a84c; background: rgba(201,168,76,0.10); }
+.recap-save      { color: #80cc80; background: rgba(80,200,80,0.08); }
+.recap-ok        { color: #80cc80; }
+
+.recap-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+.recap-nav .wiz-btn { margin: 0; flex: 1; }
+
+.wiz-btn-alba {
+  background: linear-gradient(135deg, #c9a84c, #e8c96a);
+  color: #1a1208;
+  font-weight: 700;
+  border: none;
+}

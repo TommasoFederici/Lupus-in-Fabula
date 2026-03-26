@@ -18,8 +18,10 @@ let currentPlayerData = null;
 
 // ── Wizard state (notte) ───────────────────────────────────────────────────
 let wizardStep      = 0;
+let wizardDone      = false;
 let lastNightNumber = -1;
 let lastGameData    = null;
+let lastSkipFirst   = false;
 let wizardRuoli     = [];
 
 const ROLE_EMOJI = {
@@ -139,9 +141,10 @@ function renderNarratorView(gameData) {
   const nightNumber = gameData.state?.nightNumber   ?? 1;
   const skipFirst   = gameData.state?.skipFirstNight ?? false;
 
-  // Reset wizard step quando inizia una nuova notte
+  // Reset wizard quando inizia una nuova notte
   if (nightNumber !== lastNightNumber) {
     wizardStep      = 0;
+    wizardDone      = false;
     lastNightNumber = nightNumber;
   }
 
@@ -169,6 +172,7 @@ function renderNarratorView(gameData) {
 // NIGHT WIZARD — un ruolo alla volta
 // ──────────────────────────────────────────────────────────────────────────────
 function renderNightDashboard(gameData, skipFirst) {
+  lastSkipFirst = skipFirst;
   const container = document.getElementById("night-dashboard");
   container.innerHTML = "";
 
@@ -181,10 +185,13 @@ function renderNightDashboard(gameData, skipFirst) {
   const nomiAttivi    = Object.keys(rolesDB).filter(n => (rolesDB[n]?.count ?? 0) > 0);
   const activePlayers = Object.entries(players).filter(([, p]) => p.role !== "host" && p.isAlive);
 
+  const albaBtn = document.getElementById("toggle-phase-btn");
+
   if (skipFirst && (stato.nightNumber ?? 1) === 1) {
     container.innerHTML = `<div class="skip-night-banner">
       🌙 Prima notte: <strong>silenzio assoluto</strong>.<br>
       Premi <em>Alba</em> per proseguire.</div>`;
+    if (albaBtn) albaBtn.disabled = false;
     return;
   }
 
@@ -194,6 +201,14 @@ function renderNightDashboard(gameData, skipFirst) {
 
   if (wizardRuoli.length === 0) {
     container.innerHTML = "<p class='empty-msg'>Nessun ruolo attivo questa notte.</p>";
+    if (albaBtn) albaBtn.disabled = false;
+    return;
+  }
+
+  if (albaBtn) albaBtn.disabled = !wizardDone;
+
+  if (wizardDone) {
+    renderNightRecap(container, gameData, activePlayers, players, azioni, tempFeedback);
     return;
   }
 
@@ -288,24 +303,139 @@ function renderNightDashboard(gameData, skipFirst) {
     await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
     if (wizardStep < wizardRuoli.length - 1) {
       wizardStep++;
-      renderNightDashboard(lastGameData, skipFirst);
+    } else {
+      wizardDone = true;
     }
+    renderNightDashboard(lastGameData, lastSkipFirst);
   });
   nav.appendChild(skipBtn);
 
   const nextBtn = document.createElement("button");
   nextBtn.className = "wiz-btn wiz-btn-next";
-  nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Tutti i ruoli completati";
+  nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Completa notte →";
   nextBtn.addEventListener("click", () => {
     if (wizardStep < wizardRuoli.length - 1) {
       wizardStep++;
-      renderNightDashboard(lastGameData, skipFirst);
+    } else {
+      wizardDone = true;
     }
+    renderNightDashboard(lastGameData, lastSkipFirst);
   });
   nav.appendChild(nextBtn);
 
   card.appendChild(nav);
   container.appendChild(card);
+}
+
+// ── Night Recap ───────────────────────────────────────────────────────────────
+function renderNightRecap(container, gameData, activePlayers, players, azioni, tempFeedback) {
+  const rolesDB   = gameData.roles  ?? {};
+  const stato     = gameData.state  ?? {};
+  const nomiAttivi = Object.keys(rolesDB).filter(n => (rolesDB[n]?.count ?? 0) > 0);
+  const ruoliNotte = Object.values(ROLES)
+    .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
+    .sort((a, b) => a.prioritaNotte - b.prioritaNotte);
+
+  // ── Calcola morti attesi ──────────────────────────────────────────────────
+  const killed   = Object.keys(azioni.killed  ?? {}).filter(u => azioni.killed[u]);
+  const savedUid = azioni.saved ?? null;
+  const mortiAttesi = killed.filter(uid => uid !== savedUid);
+
+  // Figlio del lupo: non muore, si trasforma
+  const figlioUids = mortiAttesi.filter(uid => players[uid]?.gameRole === "Figlio del Lupo");
+  const mortiReali = mortiAttesi.filter(uid => players[uid]?.gameRole !== "Figlio del Lupo");
+
+  // ── Riga azione per ogni ruolo ────────────────────────────────────────────
+  const actionRows = ruoliNotte.map(ruolo => {
+    const emoji = ROLE_EMOJI[ruolo.nome] ?? "•";
+    const color = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
+    const controlli = ruolo.controlliNotte(Object.fromEntries(activePlayers), azioni, stato);
+    let azioneText = "–";
+    if (controlli?.length) {
+      const ctrl = controlli[0];
+      if (ctrl.tipo === "checkbox-multi") {
+        const uids = Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k]);
+        azioneText = uids.length ? uids.map(uid => players[uid]?.name ?? uid).join(", ") : "Nessuno";
+      } else if (ctrl.tipo === "radio") {
+        const uid = azioni[ctrl.chiaveAzione];
+        azioneText = uid ? (players[uid]?.name ?? uid) : "Nessuno";
+      } else if (ctrl.tipo === "select-ruolo") {
+        azioneText = azioni[ctrl.chiaveAzione] ?? "Nessuno";
+      }
+    }
+    // Aggiungi feedback investigativo se presente
+    const fb = tempFeedback?.[ruolo.id];
+    let feedbackText = "";
+    if (fb?.risultato) feedbackText = ` → <em>${fb.risultato === "lupo" ? "🐺 Lupo" : fb.risultato === "esce" ? "🚶 Esce" : fb.risultato === "innocente" ? "✅ Innocente" : "🏠 Resta"}</em>`;
+    else if (fb?.roleName) feedbackText = ` → <em>🎭 ${fb.roleName}</em>`;
+
+    return `<div class="recap-action-row">
+      <span class="recap-role-name" style="color:${color}">${emoji} ${ruolo.nome}</span>
+      <span class="recap-action-value">${azioneText}${feedbackText}</span>
+    </div>`;
+  }).join("");
+
+  // ── Riepilogo esiti ───────────────────────────────────────────────────────
+  let esiti = "";
+  if (mortiReali.length === 0 && figlioUids.length === 0) {
+    esiti = `<div class="recap-outcome-row recap-ok">🌙 Stanotte non è morto nessuno.</div>`;
+  } else {
+    mortiReali.forEach(uid => {
+      esiti += `<div class="recap-outcome-row recap-death">💀 ${players[uid]?.name ?? uid} muore stanotte</div>`;
+    });
+    figlioUids.forEach(uid => {
+      esiti += `<div class="recap-outcome-row recap-transform">🐺 ${players[uid]?.name ?? uid} si trasforma in Lupo</div>`;
+    });
+  }
+  if (savedUid && killed.includes(savedUid)) {
+    esiti += `<div class="recap-outcome-row recap-save">🏠 ${players[savedUid]?.name ?? savedUid} si salva (Puttana)</div>`;
+  }
+
+  // ── Costruisci DOM ────────────────────────────────────────────────────────
+  const wrap = document.createElement("div");
+  wrap.className = "recap-wrap";
+  wrap.innerHTML = `
+    <div class="recap-bar" id="recap-bar">
+      <div class="recap-bar-header" id="recap-bar-toggle">
+        <span class="recap-bar-title">✅ Tutti i ruoli completati</span>
+        <span class="recap-bar-expand" id="recap-expand-icon">▼ Dettagli</span>
+      </div>
+      <div class="recap-full" id="recap-full" style="display:none">
+        <div class="recap-section">
+          <div class="recap-section-title">Azioni di stanotte</div>
+          ${actionRows}
+        </div>
+        <div class="recap-section">
+          <div class="recap-section-title">Esiti previsti</div>
+          ${esiti}
+        </div>
+      </div>
+    </div>
+    <div class="recap-nav">
+      <button class="wiz-btn wiz-btn-back" id="recap-back-btn">← Torna al wizard</button>
+      <button class="wiz-btn wiz-btn-alba" id="recap-alba-btn">☀️ Vai all'Alba</button>
+    </div>`;
+
+  container.appendChild(wrap);
+
+  // Toggle espandi/comprimi
+  wrap.querySelector("#recap-bar-toggle").addEventListener("click", () => {
+    const full = wrap.querySelector("#recap-full");
+    const icon = wrap.querySelector("#recap-expand-icon");
+    const open = full.style.display !== "none";
+    full.style.display = open ? "none" : "block";
+    icon.textContent = open ? "▼ Dettagli" : "▲ Chiudi";
+  });
+
+  // Torna al wizard
+  wrap.querySelector("#recap-back-btn").addEventListener("click", () => {
+    wizardDone = false;
+    wizardStep = wizardRuoli.length - 1;
+    renderNightDashboard(lastGameData, lastSkipFirst);
+  });
+
+  // Alba
+  wrap.querySelector("#recap-alba-btn").addEventListener("click", handlePhaseToggle);
 }
 
 // ── Sentinel picker cancelled ─────────────────────────────────────────────────
