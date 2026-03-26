@@ -217,13 +217,7 @@ function renderNightDashboard(gameData, skipFirst) {
 
   const albaBtn = document.getElementById("toggle-phase-btn");
 
-  if (skipFirst && (stato.nightNumber ?? 1) === 1) {
-    container.innerHTML = `<div class="skip-night-banner">
-      🌙 Prima notte: <strong>silenzio assoluto</strong>.<br>
-      Premi <em>Alba</em> per proseguire.</div>`;
-    if (albaBtn) albaBtn.disabled = false;
-    return;
-  }
+  const firstNightMode = skipFirst && (stato.nightNumber ?? 1) === 1;
 
   wizardRuoli = Object.values(ROLES)
     .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
@@ -235,11 +229,17 @@ function renderNightDashboard(gameData, skipFirst) {
     return;
   }
 
-  if (albaBtn) albaBtn.disabled = !wizardDone;
+  if (albaBtn) albaBtn.disabled = firstNightMode ? false : !wizardDone;
 
   if (wizardDone) {
     renderNightRecap(container, gameData, activePlayers, players, azioni, tempFeedback);
     return;
+  }
+
+  if (firstNightMode) {
+    container.insertAdjacentHTML("afterbegin",
+      `<div class="skip-night-banner">🌙 Prima notte: <strong>silenzio assoluto</strong> — nessuna azione, solo presentazioni.</div>`
+    );
   }
 
   if (wizardStep >= wizardRuoli.length) wizardStep = wizardRuoli.length - 1;
@@ -285,11 +285,13 @@ function renderNightDashboard(gameData, skipFirst) {
          </div>`
       : `<p class="wiz-no-players">Nessuno con questo ruolo in partita.</p>`}`;
 
-  // ── Simplified card: tutti morti o potere già usato
-  if (allDead || powerUsed) {
-    const msg = allDead
-      ? "💀 Questo ruolo non c'è più in gioco — chiamalo e vai avanti."
-      : "⏸ Questo ruolo ha già usato il suo potere — chiamalo e vai avanti.";
+  // ── Simplified card: prima notte, tutti morti, o potere già usato
+  if (firstNightMode || allDead || powerUsed) {
+    const msg = firstNightMode
+      ? "🌙 Prima notte: nessuna azione — chiamalo e vai avanti."
+      : allDead
+        ? "💀 Questo ruolo non c'è più in gioco — chiamalo e vai avanti."
+        : "⏸ Questo ruolo ha già usato il suo potere — chiamalo e vai avanti.";
     const infoP = document.createElement("p");
     infoP.className = "wiz-simplified-msg";
     infoP.textContent = msg;
