@@ -197,6 +197,25 @@ body {
 #start-game-btn:hover  { filter: brightness(1.1); transform: translateY(-1px); }
 #start-game-btn:active { transform: translateY(0); }
 
+.btn-close-lobby {
+  width: 100%;
+  padding: 0.6rem;
+  font-size: 0.82rem;
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.05em;
+  margin-top: 0.4rem;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--blood-light, #c05050);
+  border: 1px solid rgba(180,60,60,0.4);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-close-lobby:hover {
+  background: rgba(180,60,60,0.1);
+  border-color: rgba(180,60,60,0.7);
+}
+
 /* ── Role category headers ───────────────────────────────────────────────────── */
 .role-category-header {
   display: flex;

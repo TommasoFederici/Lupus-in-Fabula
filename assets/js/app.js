@@ -141,15 +141,9 @@ document.getElementById("new-game").addEventListener("click", async () => {
 
 // --- Unirsi a partita esistente ---
 document.getElementById("join-game").addEventListener("click", async () => {
-  const playerName = await ui.prompt("Come ti chiami?", {
-    icon: "🐺",
-    title: "Unisciti a una Partita",
-    placeholder: "Il tuo nome…"
-  });
-  if (!playerName) return;
-
   const rawCode = await ui.prompt("Inserisci il codice della partita:", {
     icon: "🔑",
+    title: "Unisciti a una Partita",
     placeholder: "Es. AB3XZ"
   });
   if (!rawCode) return;
@@ -158,24 +152,53 @@ document.getElementById("join-game").addEventListener("click", async () => {
   try { user = await requireAuth(); }
   catch { await ui.alert("Accesso anonimo non riuscito. Ricarica la pagina.", { icon: "🔒" }); return; }
 
-  const gameCode = rawCode.toUpperCase();
+  const gameCode = rawCode.trim().toUpperCase();
   const gameRef  = ref(db, "games/" + gameCode);
 
+  let snapshot;
+  try { snapshot = await get(gameRef); }
+  catch (err) { await ui.alert("Errore di connessione.", { icon: "❌" }); return; }
+
+  if (!snapshot.exists()) {
+    await ui.alert("Partita non trovata.", { icon: "🔍" });
+    return;
+  }
+
+  const gameData = snapshot.val();
+  if (gameData.state?.status === "running") {
+    await ui.alert("Questa partita è già in corso.", { icon: "🚫" });
+    return;
+  }
+
+  // Già dentro? Rientra direttamente
+  if (gameData.players?.[user.uid]) {
+    saveGame(gameCode, gameData.players[user.uid].name);
+    window.location.href = `lobby?gameCode=${gameCode}`;
+    return;
+  }
+
+  const existingNames = Object.values(gameData.players ?? {})
+    .filter(p => p.role !== "host")
+    .map(p => p.name.trim().toLowerCase());
+
+  let playerName;
+  while (true) {
+    playerName = await ui.prompt("Come ti chiami?", {
+      icon: "🐺",
+      placeholder: "Il tuo nome…"
+    });
+    if (!playerName) return;
+    playerName = playerName.trim();
+    if (!playerName) continue;
+    if (existingNames.includes(playerName.toLowerCase())) {
+      await ui.alert(`Il nome "${playerName}" è già in uso in questa partita. Scegline un altro.`, { icon: "⚠️" });
+      continue;
+    }
+    break;
+  }
+
   try {
-    const snapshot = await get(gameRef);
-    if (!snapshot.exists()) {
-      await ui.alert("Partita non trovata.", { icon: "🔍" });
-      return;
-    }
-
-    const gameData = snapshot.val();
-    if (gameData.state?.status === "running") {
-      await ui.alert("Questa partita è già in corso.", { icon: "🚫" });
-      return;
-    }
-
-    const playerRef = ref(db, `games/${gameCode}/players/${user.uid}`);
-    await set(playerRef, {
+    await set(ref(db, `games/${gameCode}/players/${user.uid}`), {
       uid:     user.uid,
       name:    playerName,
       role:    "guest",

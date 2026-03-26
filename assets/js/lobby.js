@@ -164,6 +164,26 @@ async function setupLobby() {
     if (gameData.state?.status === "running") {
       window.location.href = `game?gameCode=${gameCode}`;
     }
+
+    if (gameData.state?.status === "closed" && !isHost) {
+      window.location.href = "/";
+    }
+
+    // Bottone chiudi lobby (solo host)
+    const closeBtn = document.getElementById("close-lobby-btn");
+    if (closeBtn) {
+      closeBtn.style.display = isHost ? "block" : "none";
+      if (!closeBtn.dataset.listener) {
+        closeBtn.dataset.listener = "1";
+        closeBtn.addEventListener("click", async () => {
+          if (!await ui.confirm("Chiudere la lobby e rimuovere tutti i giocatori?", {
+            icon: "✕", confirmLabel: "Chiudi", danger: true
+          })) return;
+          await update(ref(db, `games/${gameCode}/state`), { status: "closed" });
+          window.location.href = "/";
+        });
+      }
+    }
   });
 
   document.getElementById("game-code-bar")?.addEventListener("click", () => {
