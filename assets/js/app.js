@@ -1,85 +1,110 @@
 // assets/js/app.js
 import { db, auth } from "./firebase.js";
 import { ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import * as ui from "./ui.js";
+
+// Aspetta che Firebase abbia stabilito lo stato di auth (evita race condition)
+function requireAuth() {
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+  return new Promise((resolve, reject) => {
+    const unsub = onAuthStateChanged(auth, user => {
+      unsub();
+      if (user) resolve(user);
+      else reject(new Error("Non autenticato"));
+    });
+    setTimeout(() => reject(new Error("Auth timeout")), 6000);
+  });
+}
 
 // --- Creazione nuova partita ---
 document.getElementById("new-game").addEventListener("click", async () => {
-  const playerName = prompt("Inserisci il tuo nome:");
-  if (!playerName) return alert("Devi inserire un nome!");
+  const playerName = await ui.prompt("Come ti chiami?", {
+    icon: "🐺",
+    title: "Nuova Partita",
+    placeholder: "Il tuo nome…"
+  });
+  if (!playerName) return;
 
-  // Codice partita casuale a 5 caratteri
+  let user;
+  try { user = await requireAuth(); }
+  catch { await ui.alert("Accesso anonimo non riuscito. Ricarica la pagina.", { icon: "🔒" }); return; }
+
   const gameCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-
-  // Riferimento alla nuova partita
-  const gameRef = ref(db, "games/" + gameCode);
+  const gameRef  = ref(db, "games/" + gameCode);
 
   try {
-    // Scrive la partita nel DB
     await set(gameRef, {
-      host: auth.currentUser.uid,       // uid dell’host
-      state: { status: "waiting" },     // stato iniziale
+      host: user.uid,
+      state: { status: "waiting" },
       players: {
-        [auth.currentUser.uid]: { 
-          name: playerName,
-          role: "host"
+        [user.uid]: {
+          name:    playerName,
+          role:    "host",
+          isAlive: true,
+          gameRole: null,
+          isMuted: false
         }
       }
     });
 
-    alert(`✅ Partita creata! Codice: ${gameCode}`);
-    console.log(`Partita creata con host: ${playerName} (${auth.currentUser.uid})`);
-
-    // Redirect alla lobby
-    window.location.href = `lobby.html?gameCode=${gameCode}`;
+    window.location.href = `lobby?gameCode=${gameCode}`;
 
   } catch (err) {
     console.error(err);
-    alert("❌ Errore nella creazione della partita");
+    await ui.alert("Errore nella creazione della partita.", { icon: "❌" });
   }
 });
 
-// --- Join a partita esistente ---
+// --- Unirsi a partita esistente ---
 document.getElementById("join-game").addEventListener("click", async () => {
-  const playerName = prompt("Inserisci il tuo nome:");
-  if (!playerName) return alert("Devi inserire un nome!");
+  const playerName = await ui.prompt("Come ti chiami?", {
+    icon: "🐺",
+    title: "Unisciti a una Partita",
+    placeholder: "Il tuo nome…"
+  });
+  if (!playerName) return;
 
-  const gameCode = prompt("Inserisci il codice della partita:");
-  if (!gameCode) return;
+  const rawCode = await ui.prompt("Inserisci il codice della partita:", {
+    icon: "🔑",
+    placeholder: "Es. AB3XZ"
+  });
+  if (!rawCode) return;
 
-  const gameRef = ref(db, "games/" + gameCode.toUpperCase());
+  let user;
+  try { user = await requireAuth(); }
+  catch { await ui.alert("Accesso anonimo non riuscito. Ricarica la pagina.", { icon: "🔒" }); return; }
+
+  const gameCode = rawCode.toUpperCase();
+  const gameRef  = ref(db, "games/" + gameCode);
 
   try {
     const snapshot = await get(gameRef);
     if (!snapshot.exists()) {
-      alert("❌ Partita non trovata!");
+      await ui.alert("Partita non trovata.", { icon: "🔍" });
       return;
     }
 
     const gameData = snapshot.val();
-    // 🔴 NUOVO CONTROLLO: Impedisci l'ingresso se la partita non è in attesa
-    if (gameData.state && gameData.state.status !== "waiting") {
-      alert("❌ Questa partita è già iniziata o terminata!");
+    if (gameData.state?.status !== "waiting") {
+      await ui.alert("Questa partita è già iniziata o terminata.", { icon: "🚫" });
       return;
     }
 
-    // Aggiunge il giocatore come guest
-
-    // Aggiunge il giocatore come guest
-    const playerRef = ref(db, `games/${gameCode.toUpperCase()}/players/${auth.currentUser.uid}`);
-    await set(playerRef, { 
-      uid: auth.currentUser.uid,   // 👈 aggiunto
-      name: playerName,
-      role: "guest",
+    const playerRef = ref(db, `games/${gameCode}/players/${user.uid}`);
+    await set(playerRef, {
+      uid:     user.uid,
+      name:    playerName,
+      role:    "guest",
       isAlive: true,
-      gameRole: null
+      gameRole: null,
+      isMuted: false
     });
 
-    alert("✅ Sei entrato nella partita!");
-    // Redirect alla lobby
-    window.location.href = `lobby.html?gameCode=${gameCode.toUpperCase()}`;
+    window.location.href = `lobby?gameCode=${gameCode}`;
 
   } catch (err) {
     console.error(err);
-    alert("❌ Errore nell'unirsi alla partita");
+    await ui.alert("Errore nell'unirsi alla partita.", { icon: "❌" });
   }
 });

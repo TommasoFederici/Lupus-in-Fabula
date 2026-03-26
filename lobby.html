@@ -4,26 +4,50 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lobby - Lupus in Fabula</title>
+  <link rel="stylesheet" href="assets/css/base.css">
   <link rel="stylesheet" href="assets/css/lobby.css">
 </head>
 <body>
   <div class="container">
     <h1>Lobby</h1>
 
-    <!-- Codice partita -->
-    <div id="game-code"></div>
-
-    <!-- Lista giocatori -->
     <h2>Giocatori</h2>
     <div id="players-list"></div>
 
-    <!-- Lista ruoli -->
     <h2>Ruoli</h2>
     <div id="roles-list"></div>
 
-    <!-- Pulsante start visibile solo all'host -->
+    <!-- Impostazioni partita (visibili solo all'host) -->
+    <div id="settings-section" style="display:none;">
+      <h2>Impostazioni</h2>
+      <label class="toggle-row">
+        <input type="checkbox" id="skip-first-night" />
+        <span class="toggle-label">Salta Prima Notte <span class="toggle-hint">(nessun ruolo agisce nella notte 1)</span></span>
+      </label>
+      <label class="toggle-row toggle-dev">
+        <input type="checkbox" id="dev-mode" />
+        <span class="toggle-label">Modalità Sviluppatore 🧪 <span class="toggle-hint">(aggiunge bot per testare senza giocatori reali)</span></span>
+      </label>
+    </div>
+
+    <!-- Dev Mode: pannello bot (visibile solo se devMode attivo) -->
+    <div id="dev-section" style="display:none;">
+      <h2>🧪 Dev Mode</h2>
+      <button id="add-bot-btn">🤖 + Aggiungi Bot</button>
+    </div>
+
     <button id="start-game-btn" style="display:none;">Inizia Partita</button>
   </div>
+
+  <!-- Among Us–style game code bar (fixed bottom) -->
+  <div id="game-code-bar">
+    <span class="code-label">Codice</span>
+    <span id="game-code"></span>
+    <span class="code-hint">tocca per copiare</span>
+  </div>
+
+  <div id="ui-overlay"></div>
+  <div id="ui-toast"></div>
 
   <script type="module" src="assets/js/lobby.js"></script>
 </body>

@@ -1,47 +1,114 @@
-/* Base */
+/* ── Landing Page — Lupus in Fabula ─────────────────────────────────────────── */
+
 body {
   margin: 0;
-  font-family: 'Poppins', sans-serif;
-  background-color: #1e1e2f;
-  color: #fff;
+  font-family: 'Lora', serif;
+  background: var(--bg-base);
+  color: var(--text-prim);
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
 }
 
+/* ── Night sky: stars ───────────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at  8% 12%, #e8d5a355 0%, transparent 100%),
+    radial-gradient(1px 1px at 22%  6%, #e8d5a345 0%, transparent 100%),
+    radial-gradient(2px 2px at 48%  4%, #e8d5a360 0%, transparent 100%),
+    radial-gradient(1px 1px at 68% 14%, #e8d5a350 0%, transparent 100%),
+    radial-gradient(1px 1px at 89%  7%, #e8d5a340 0%, transparent 100%),
+    radial-gradient(1px 1px at 14% 38%, #e8d5a332 0%, transparent 100%),
+    radial-gradient(2px 2px at 78% 32%, #e8d5a348 0%, transparent 100%),
+    radial-gradient(1px 1px at 43% 22%, #e8d5a338 0%, transparent 100%),
+    radial-gradient(1px 1px at 63% 28%, #e8d5a342 0%, transparent 100%),
+    radial-gradient(1px 1px at 33% 18%, #e8d5a330 0%, transparent 100%),
+    radial-gradient(2px 2px at 55% 44%, #e8d5a352 0%, transparent 100%),
+    radial-gradient(1px 1px at 83% 52%, #e8d5a335 0%, transparent 100%),
+    radial-gradient(1px 1px at  4% 72%, #e8d5a328 0%, transparent 100%),
+    radial-gradient(1px 1px at 93% 68%, #e8d5a333 0%, transparent 100%),
+    radial-gradient(1px 1px at 37% 58%, #e8d5a340 0%, transparent 100%),
+    radial-gradient(1px 1px at 72% 82%, #e8d5a330 0%, transparent 100%),
+    radial-gradient(1px 1px at 19% 88%, #e8d5a328 0%, transparent 100%),
+    radial-gradient(1px 1px at 58% 90%, #e8d5a336 0%, transparent 100%),
+    radial-gradient(2px 2px at 10% 52%, #e8d5a348 0%, transparent 100%),
+    radial-gradient(1px 1px at 86% 20%, #e8d5a342 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Moon glow ──────────────────────────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  top: -80px;
+  right: 8%;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #e8d5a318 0%, #c9a84c08 40%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Content ────────────────────────────────────────────────────────────────── */
 .container {
+  position: relative;
+  z-index: 1;
   text-align: center;
-  padding: 1rem;
+  padding: 2rem 1.5rem;
   width: 100%;
-  max-width: 400px;
+  max-width: 380px;
 }
 
 .title {
-  font-size: 2rem;
+  font-family: 'Cinzel', serif;
+  font-size: 2.6rem;
   font-weight: 700;
-  color: #00ffff;
-  margin-bottom: 2rem;
-  text-shadow: 0 0 10px #00ffff50;
+  color: var(--gold);
+  text-shadow: 0 0 40px #c9a84c45, 0 2px 8px rgba(0,0,0,0.9);
+  margin: 0 0 0.3rem;
+  letter-spacing: 0.07em;
+  line-height: 1.15;
 }
 
-/* Bottoni */
+.subtitle {
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  margin: 0 0 2.8rem;
+  letter-spacing: 0.02em;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
 .btn {
-  background-color: #2c2c3e;
-  color: #00ffff;
-  border: none;
-  padding: 0.8rem 1.5rem;
-  margin: 0.5rem 0;
-  font-size: 1rem;
+  background: var(--bg-card);
+  color: var(--gold);
+  border: 1px solid var(--border-gold);
+  padding: 0.9rem 1.5rem;
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
   font-weight: 600;
-  border-radius: 10px;
+  letter-spacing: 0.06em;
+  border-radius: var(--radius-md);
   cursor: pointer;
   width: 100%;
-  transition: all 0.2s ease;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
 }
-
 .btn:hover {
-  background-color: #00ffff20;
-  color: #1e1e2f;
-  box-shadow: 0 0 10px #00ffff50;
+  background: #1c1a10;
+  box-shadow: 0 0 20px #c9a84c22;
+  transform: translateY(-2px);
 }
+.btn:active { transform: translateY(0); }

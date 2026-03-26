@@ -1,25 +1,69 @@
-<body>
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lupus in Fabula</title>
+  <link rel="stylesheet" href="assets/css/base.css">
   <link rel="stylesheet" href="assets/css/game.css">
-  <div id="game-container">
-    <!-- Player view -->
-    <div id="player-view" style="display:none;">
-      <h2>Il tuo ruolo</h2>
-      <div id="role-card" class="card">Ruolo</div>
-      <button id="toggle-card">Scopri/Nascondi Ruolo</button>
-      <!-- Wrapper per eventuali elementi aggiuntivi -->
-      <div id="player-card-container"></div>
-    </div>
+</head>
+<body>
+<div id="game-container">
 
-    <!-- Narratore view -->
-    <div id="narrator-view" style="display:none;">
-      <h2>Schermata Narratore</h2>
-      <button id="toggle-phase-btn">Passa al giorno/notte</button>
-      <h3>Giocatori</h3>
-      <div id="narrator-table-container"></div>
-      <ul id="players-narrator"></ul>
-      <button id="end-game-btn">Termina Partita</button>
-    </div>
+  <!-- ═══════════════════════════════════════════════════ PLAYER VIEW -->
+  <div id="player-view" style="display:none;">
+    <h2>Il tuo ruolo</h2>
+    <div id="role-card" class="card">???</div>
+    <button id="toggle-card">Scopri / Nascondi ruolo</button>
+    <div id="player-status" class="status-banner" style="display:none;"></div>
   </div>
 
-  <script type="module" src="assets/js/game.js" defer></script>
+  <!-- ═══════════════════════════════════════════════ NARRATOR VIEW -->
+  <div id="narrator-view" style="display:none;">
+
+    <div id="phase-indicator" class="phase-indicator"></div>
+    <button id="toggle-phase-btn" class="btn-phase"></button>
+
+    <!-- Sezione NOTTE: dashboard sequenziale ruoli -->
+    <div id="night-section" style="display:none;">
+      <h3>📋 Sequenza Notte</h3>
+      <div id="night-dashboard"></div>
+    </div>
+
+    <!-- Sezione GIORNO: tabella giocatori + votazione -->
+    <div id="day-section" style="display:none;">
+      <h3>👥 Giocatori</h3>
+      <div id="day-players"></div>
+
+      <div id="voting-section"></div>
+    </div>
+
+    <!-- Log eventi con pulsante Annulla -->
+    <details class="log-section">
+      <summary>📜 Log di gioco</summary>
+      <div class="log-toolbar">
+        <button id="undo-btn" class="btn-undo" disabled>↩ Nessuna azione da annullare</button>
+      </div>
+      <div id="event-log"></div>
+    </details>
+
+    <button id="end-game-btn" class="btn-danger">Termina Partita</button>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════ SUMMARY MODAL -->
+<div id="summary-modal" style="display:none;">
+  <div id="summary-box">
+    <h3>🌅 Riepilogo Alba</h3>
+    <div id="summary-content"></div>
+    <button id="summary-close">Chiudi</button>
+  </div>
+</div>
+
+<div id="ui-overlay"></div>
+<div id="ui-toast"></div>
+
+<script type="module" src="assets/js/game.js"></script>
 </body>
+</html>
