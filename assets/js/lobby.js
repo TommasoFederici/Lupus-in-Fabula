@@ -256,7 +256,7 @@ async function loadRoles(dbRoles) {
       const wikiData = ROLE_DATA[ruolo.nome];
       const row = document.createElement("div");
       row.className = "role-row";
-      row.dataset.faction = ruolo.fazione;
+      row.dataset.faction = ROLE_DATA[ruolo.nome]?.categoria ?? ruolo.fazione;
 
       // ── Riga superiore: emoji + nome + [ⓘ]
       const top = document.createElement("div");
