@@ -3,7 +3,7 @@ import { db, auth } from "./firebase.js";
 import {
   ref, onValue, get, update, push
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-import { ROLES } from "./engine/roles.js";
+import { ROLES, playerEsceNotte } from "./engine/roles.js";
 import { processaNotte } from "./engine/nightEngine.js";
 import { formatLogEntry } from "./engine/eventLog.js";
 import * as ui from "./ui.js";
@@ -199,7 +199,7 @@ function renderNightDashboard(gameData, skipFirst) {
     const controlli = ruolo.controlliNotte(giocatoriMap, azioni, stato);
     if (controlli?.length) {
       controlli.forEach(ctrl => {
-        const el = buildControl(ctrl, activePlayers, azioni, rolesDB);
+        const el = buildControl(ctrl, activePlayers, azioni, rolesDB, ruolo, giocatoriMap, stato);
         if (el) body.appendChild(el);
       });
     } else {
@@ -252,100 +252,219 @@ function isRolePendente(ruolo, azioni, activePlayers, stato) {
 }
 
 // Costruisce un controllo UI dal descrittore del ruolo
-function buildControl(ctrl, activePlayers, azioni, rolesDB) {
+// Sentinel per distinguere "annullato" da "nessuno scelto intenzionalmente"
+const PICKER_CANCELLED = {};
+
+// ── Player/role picker bottom sheet ──────────────────────────────────────────
+function openPicker({ title, entries, multi, selectedKeys, optional }) {
+  return new Promise(resolve => {
+    const sheet      = document.getElementById("player-picker");
+    const titleEl    = sheet.querySelector(".picker-title");
+    const listEl     = sheet.querySelector(".picker-list");
+    const confirmBtn = sheet.querySelector(".picker-confirm-btn");
+    const closeBtn   = sheet.querySelector(".picker-close");
+    const backdrop   = sheet.querySelector(".picker-backdrop");
+
+    titleEl.textContent = title;
+    const selected = new Set(Array.isArray(selectedKeys) ? selectedKeys : []);
+
+    const allEntries = optional
+      ? [{ id: "__none__", label: "Nessuno", isNone: true }, ...entries]
+      : entries;
+
+    function renderRows() {
+      listEl.innerHTML = "";
+      for (const entry of allEntries) {
+        const isSel = selected.has(entry.id);
+        const row   = document.createElement("div");
+        row.className = "picker-row" + (isSel ? " selected" : "") + (entry.isNone ? " none-row" : "");
+        row.innerHTML = `
+          <span class="picker-row-check">${isSel ? "✓" : "○"}</span>
+          <div class="picker-row-info">
+            <span class="picker-row-name">${entry.label}</span>
+            ${entry.sublabel ? `<span class="picker-row-sub">${entry.sublabel}</span>` : ""}
+          </div>`;
+        row.addEventListener("click", () => {
+          if (multi) {
+            if (entry.isNone) selected.clear();
+            else if (isSel)   selected.delete(entry.id);
+            else              selected.add(entry.id);
+            renderRows();
+          } else {
+            closeSheet();
+            resolve(entry.isNone ? null : entry.id);
+          }
+        });
+        listEl.appendChild(row);
+      }
+    }
+
+    confirmBtn.style.display = multi ? "block" : "none";
+    confirmBtn.onclick = () => { closeSheet(); resolve(selected); };
+
+    function closeSheet() {
+      sheet.classList.add("closing");
+      sheet.addEventListener("animationend", () => {
+        sheet.style.display = "none";
+        sheet.classList.remove("closing");
+      }, { once: true });
+    }
+    const cancel = () => { closeSheet(); resolve(PICKER_CANCELLED); };
+    closeBtn.onclick = cancel;
+    backdrop.onclick = cancel;
+
+    renderRows();
+    sheet.style.display = "flex";
+  });
+}
+
+// ── Night result computation ──────────────────────────────────────────────────
+function computeNightResult(ruolo, ctrl, azioni, players, stato) {
+  // Veggente → mostra lupo / innocente
+  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
+    const uid = azioni["investigated"];
+    if (!uid) return null;
+    const target = players[uid];
+    if (!target) return null;
+    const isCursed   = azioni["cursed"] === uid;
+    const targetRole = Object.values(ROLES).find(r => r.nome === target.gameRole);
+    const isLupo     = targetRole?.fazione === "lupi" || isCursed;
+    return isLupo
+      ? { text: `🐺 ${target.name} è un Lupo`, tipo: "danger" }
+      : { text: `✓ ${target.name} è Innocente`, tipo: "ok" };
+  }
+
+  // Investigatore → mostra se il bersaglio è uscito di casa
+  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
+    const uid = azioni["watched"];
+    if (!uid) return null;
+    const target = players[uid];
+    if (!target) return null;
+    // Usa playerEsceNotte con le azioni notturne disponibili
+    const targetActions = {
+      saved:  azioni["saved"]  ?? null,
+      lovers: azioni["lovers"] ?? {},
+    };
+    const esceNotte = playerEsceNotte(uid, target, targetActions, stato ?? {});
+    return esceNotte
+      ? { text: `🚶 ${target.name} è uscito di casa`, tipo: "warning" }
+      : { text: `🏠 ${target.name} è rimasto in casa`, tipo: "ok" };
+  }
+
+  // Mitomane → mostra ruolo copiato
+  if (ruolo.nome === "Mitomane" && ctrl.chiaveAzione === "copied") {
+    const roleName = azioni["copied"];
+    if (!roleName) return null;
+    return { text: `🎭 Copia il ruolo: ${roleName}`, tipo: "info" };
+  }
+
+  return null;
+}
+
+// ── buildControl — mobile-friendly (picker sheet) ─────────────────────────────
+function buildControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players, stato) {
   const wrapper = document.createElement("div");
   wrapper.className = "control-group";
 
   const labelEl = document.createElement("p");
   labelEl.className = "control-label";
-  labelEl.textContent = ctrl.label + ":";
+  labelEl.textContent = ctrl.label;
   wrapper.appendChild(labelEl);
 
   const targets = ctrl.filtroTarget
     ? activePlayers.filter(([, p]) => ctrl.filtroTarget(p))
     : activePlayers;
 
-  if (ctrl.tipo === "checkbox-multi") {
-    targets.forEach(([uid, p]) => {
-      const row = document.createElement("label");
-      row.className = "control-row";
-      const chk = document.createElement("input");
-      chk.type    = "checkbox";
-      chk.checked = !!(azioni[ctrl.chiaveAzione]?.[uid]);
+  // Testo corrente della selezione
+  function currentDisplay() {
+    if (ctrl.tipo === "checkbox-multi") {
+      const keys = Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k]);
+      if (!keys.length) return null;
+      return keys.map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ");
+    }
+    if (ctrl.tipo === "radio") {
+      const uid = azioni[ctrl.chiaveAzione];
+      if (!uid) return ctrl.opzionale ? "Nessuno" : null;
+      return activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid;
+    }
+    if (ctrl.tipo === "select-ruolo") {
+      return azioni[ctrl.chiaveAzione] ?? null;
+    }
+    return null;
+  }
 
-      chk.addEventListener("change", async () => {
-        const prevValue = azioni[ctrl.chiaveAzione]?.[uid] ? true : null;
-        await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), {
-          [uid]: chk.checked ? true : null
-        });
-        pushUndo(`${ruoloLabel(ctrl.chiaveAzione)} → ${p.name}: ${chk.checked ? "✓" : "✗"}`, async () => {
-          await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), { [uid]: prevValue });
-        });
-      });
+  // Bottone selezione
+  const selectBtn = document.createElement("button");
+  selectBtn.className = "ctrl-select-btn";
+  function refreshBtn() {
+    const sel = currentDisplay();
+    selectBtn.innerHTML = `
+      <span class="${sel ? "btn-sel-value" : "btn-sel-empty"}">${sel ?? "Tocca per scegliere…"}</span>
+      <span class="btn-sel-arrow">›</span>`;
+  }
+  refreshBtn();
 
-      row.append(chk, ` ${p.name}`);
-      wrapper.appendChild(row);
-    });
+  selectBtn.addEventListener("click", async () => {
+    let entries, multi;
 
-  } else if (ctrl.tipo === "radio") {
-    if (ctrl.opzionale) {
-      const row   = document.createElement("label");
-      row.className = "control-row";
-      const radio = document.createElement("input");
-      radio.type  = "radio";
-      radio.name  = ctrl.chiaveAzione;
-      radio.value = "__none__";
-      radio.checked = !azioni[ctrl.chiaveAzione];
-      radio.addEventListener("change", async () => {
-        const prev = azioni[ctrl.chiaveAzione] ?? null;
-        await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: null });
-        pushUndo(`${ruoloLabel(ctrl.chiaveAzione)}: Nessuno`, async () => {
-          await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: prev });
-        });
-      });
-      row.append(radio, " Nessuno");
-      wrapper.appendChild(row);
+    if (ctrl.tipo === "select-ruolo") {
+      entries = Object.keys(rolesDB)
+        .filter(n => n !== "Mitomane" && (rolesDB[n]?.count ?? 0) > 0)
+        .map(nome => ({ id: nome, label: nome }));
+      multi = false;
+    } else {
+      entries = targets.map(([uid, p]) => ({
+        id: uid, label: p.name, sublabel: p.isBot ? "🤖 Bot" : null
+      }));
+      multi = ctrl.tipo === "checkbox-multi";
     }
 
-    targets.forEach(([uid, p]) => {
-      const row   = document.createElement("label");
-      row.className = "control-row";
-      const radio = document.createElement("input");
-      radio.type  = "radio";
-      radio.name  = ctrl.chiaveAzione;
-      radio.value = uid;
-      radio.checked = azioni[ctrl.chiaveAzione] === uid;
-      radio.addEventListener("change", async () => {
-        const prev = azioni[ctrl.chiaveAzione] ?? null;
-        await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: uid });
-        pushUndo(`${ruoloLabel(ctrl.chiaveAzione)} → ${p.name}`, async () => {
-          await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: prev });
-        });
-      });
-      row.append(radio, ` ${p.name}`);
-      wrapper.appendChild(row);
+    const currentKeys =
+      ctrl.tipo === "checkbox-multi"
+        ? Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k])
+        : azioni[ctrl.chiaveAzione] ? [azioni[ctrl.chiaveAzione]] : [];
+
+    const result = await openPicker({
+      title: ctrl.label, entries, multi,
+      selectedKeys: currentKeys,
+      optional: !!ctrl.opzionale
     });
 
-  } else if (ctrl.tipo === "select-ruolo") {
-    const select = document.createElement("select");
-    select.className = "role-select";
-    const nomiRuoli = Object.keys(rolesDB)
-      .filter(n => n !== "Mitomane" && (rolesDB[n]?.count ?? 0) > 0);
-    nomiRuoli.forEach(nome => {
-      const opt = document.createElement("option");
-      opt.value = nome;
-      opt.textContent = nome;
-      if (azioni[ctrl.chiaveAzione] === nome) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener("change", async () => {
-      const prev = azioni[ctrl.chiaveAzione] ?? null;
-      await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: select.value });
-      pushUndo(`Mitomane → ${select.value}`, async () => {
+    if (result === PICKER_CANCELLED) return;
+
+    const prev = azioni[ctrl.chiaveAzione] ?? null;
+
+    if (ctrl.tipo === "checkbox-multi") {
+      const newVal = {};
+      if (result instanceof Set) {
+        result.forEach(uid => { newVal[uid] = true; });
+        currentKeys.forEach(uid => { if (!result.has(uid)) newVal[uid] = null; });
+      }
+      await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), newVal);
+      const names = result instanceof Set && result.size > 0
+        ? [...result].map(uid => activePlayers.find(([u]) => u === uid)?.[1]?.name ?? uid).join(", ")
+        : "Nessuno";
+      pushUndo(`${ctrl.label}: ${names}`, async () => {
+        await update(ref(db, `games/${gameCode}/nightActions/${ctrl.chiaveAzione}`), prev ?? {});
+      });
+    } else {
+      const value = result ?? null;
+      await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: value });
+      pushUndo(`${ctrl.label} → ${value ?? "Nessuno"}`, async () => {
         await update(ref(db, `games/${gameCode}/nightActions`), { [ctrl.chiaveAzione]: prev });
       });
-    });
-    wrapper.appendChild(select);
+    }
+  });
+
+  wrapper.appendChild(selectBtn);
+
+  // Box risultato immediato (Veggente, Investigatore, Mitomane)
+  const result = computeNightResult(ruolo, ctrl, azioni, players, stato);
+  if (result) {
+    const box = document.createElement("div");
+    box.className = `result-box result-${result.tipo}`;
+    box.textContent = result.text;
+    wrapper.appendChild(box);
   }
 
   return wrapper;
