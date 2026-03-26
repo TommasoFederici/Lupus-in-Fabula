@@ -139,6 +139,15 @@ button:active { transform: translateY(0); }
   color: var(--text-muted);
   margin-left: 0.3rem;
 }
+.step-players {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--gold);
+  opacity: 0.85;
+  font-family: 'Lora', serif;
+  margin-top: 0.15rem;
+  letter-spacing: 0.02em;
+}
 .step-toggle {
   color: var(--text-muted);
   font-size: 0.9rem;

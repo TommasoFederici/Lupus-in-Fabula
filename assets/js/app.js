@@ -4,16 +4,18 @@ import { ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import * as ui from "./ui.js";
 
-// Aspetta che Firebase abbia stabilito lo stato di auth (evita race condition)
+// Aspetta che Firebase completi il login anonimo.
+// Su un nuovo dispositivo onAuthStateChanged spara null prima che signInAnonymously
+// completi: ignoriamo i null e aspettiamo il vero user (con timeout di sicurezza).
 function requireAuth() {
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
   return new Promise((resolve, reject) => {
     const unsub = onAuthStateChanged(auth, user => {
+      if (!user) return; // sessione non ancora pronta, continua ad aspettare
       unsub();
-      if (user) resolve(user);
-      else reject(new Error("Non autenticato"));
+      resolve(user);
     });
-    setTimeout(() => reject(new Error("Auth timeout")), 6000);
+    setTimeout(() => { unsub(); reject(new Error("Auth timeout")); }, 10000);
   });
 }
 

@@ -110,11 +110,13 @@ function _card(innerHTML, extraClass, borderColor) {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// onAuthStateChanged può sparare più volte (token refresh ecc.) — guard per
+// non registrare listener Firebase multipli.
+let lobbySetup = false;
 auth.onAuthStateChanged(async (user) => {
-  if (!user) {
-    window.location.href = "/";
-    return;
-  }
+  if (!user) { window.location.href = "/"; return; }
+  if (lobbySetup) return;
+  lobbySetup = true;
   currentUser = user;
   setupLobby();
 });
@@ -234,8 +236,11 @@ async function loadRoles(dbRoles) {
   for (const r of Object.values(ROLES)) roleByName[r.nome] = r;
 
   for (const cat of CATEGORIES) {
-    // Ruoli di questa categoria
-    const ruoliCat = Object.values(ROLES).filter(r => r.fazione === cat.id);
+    // Categoria da roleData.js (fonte unica di verità per la UI),
+    // con fallback a roles.js per retrocompatibilità
+    const ruoliCat = Object.values(ROLES).filter(r =>
+      (ROLE_DATA[r.nome]?.categoria ?? r.fazione) === cat.id
+    );
     if (ruoliCat.length === 0) continue;
 
     // Intestazione categoria
