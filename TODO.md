@@ -1,0 +1,3 @@
+- Annullamento dell'azione non mette nome del personaggio ma mette un id a caso. fixare
+- Log appende dal basso verso l'alto, quindi prima azione della notte in alto, ultima in basso, ma poi appende la notte ai log in alto. quindi il senso logico è rotto, dato che bisognerebbe leggere ogni notte dall'alto verso il basso ma i log in generale dal basso verso l'alto
+- a proposito dei logs, ci starebbe se fossero divisi per notte, in modo che il narratore possa vederli, e magari poi esportare in un messaggio whatsapp alla fine della partita, cioè copiare in clipboard intendo, strutturati da messaggio whatsapp
