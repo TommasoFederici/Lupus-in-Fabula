@@ -20,6 +20,15 @@ function _close(dialogEl, resolve, value) {
   }, { once: true });
 }
 
+// ── escapeHtml ────────────────────────────────────────────────────────────
+// Neutralizza input arbitrario (es. nomi giocatore) prima di interpolarlo
+// in innerHTML, per evitare injection HTML/script.
+export function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 // ── alert ──────────────────────────────────────────────────────────────────
 export function alert(msg, { title = null, icon = '🐺' } = {}) {
   return new Promise(resolve => {

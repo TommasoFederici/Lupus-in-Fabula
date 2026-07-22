@@ -4,6 +4,7 @@
 
 import { db } from "../firebase.js";
 import { ref, push } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { escapeHtml } from "../ui.js";
 
 export async function logEvento(gameCode, evento) {
   await push(ref(db, `games/${gameCode}/log`), {
@@ -20,7 +21,7 @@ export async function logEventi(gameCode, eventi) {
 
 // Formatta un evento in stringa leggibile per la UI
 export function formatLogEntry(e, giocatori = {}) {
-  const nome = (uid) => giocatori[uid]?.name ?? uid;
+  const nome = (uid) => escapeHtml(giocatori[uid]?.name ?? uid);
 
   switch (e.tipo) {
     case "attacco_lupo":                    return `🐺 I Lupi attaccano ${nome(e.vittima)}`;

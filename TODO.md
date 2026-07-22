@@ -1,4 +1,4 @@
 - Log copia clipboard non funziona, fixare
 - dashboard narratore, che vede durante la notte tutte le persone tutti i ruoli, tirando giù una tendina
 - quando c'è un evento vittoria, a schermo deve esserci scritto VITTORIA! Vincono i "Fazione" e basta. la partita non deve continuare. a meno che il narratore non prema annulla e torni indietro l'azione. 
-- Quando il matto viene espulso, non conta come condizione di vittoria. è un bug. 
+- Quando il matto viene espulso, non conta come condizione di vittoria. è un bug.

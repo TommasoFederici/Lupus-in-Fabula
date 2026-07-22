@@ -20,19 +20,34 @@ import { db } from "../firebase.js";
 import { ref, get, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { ROLES, checkWinConditions, calcSpettroProb, countWolves } from "./roles.js";
 import { logEventi } from "./eventLog.js";
+import { escapeHtml } from "../ui.js";
+
+// Campi "segreti" — vivono su games/{code}/private/{uid}, non su players/{uid},
+// così le regole Firebase possono nasconderli agli altri client (vedi database.rules.json).
+const PRIVATE_KEYS = new Set([
+  "gameRole", "bugiardoUsato", "boiaUsato", "ammaestratoreUsato",
+  "genioUsato", "angeloUsato", "giustiziereUsato"
+]);
 
 export async function processaNotte(gameCode) {
-  const [actionsSnap, playersSnap, stateSnap, rolesSnap] = await Promise.all([
+  const [actionsSnap, playersSnap, privateSnap, stateSnap, rolesSnap] = await Promise.all([
     get(ref(db, `games/${gameCode}/nightActions`)),
     get(ref(db, `games/${gameCode}/players`)),
+    get(ref(db, `games/${gameCode}/private`)),
     get(ref(db, `games/${gameCode}/state`)),
     get(ref(db, `games/${gameCode}/roles`))
   ]);
 
   const azioni    = actionsSnap.exists()  ? actionsSnap.val()  : {};
-  const giocatori = playersSnap.val()     ?? {};
+  const playersDB = playersSnap.val()     ?? {};
+  const privateDB = privateSnap.val()     ?? {};
   const stato     = stateSnap.val()       ?? {};
   const rolesDB   = rolesSnap.exists()    ? rolesSnap.val()    : {};
+
+  // Stato "pubblico + privato" unificato per la logica di gioco — solo la
+  // scrittura finale (sezione 10) instrada ogni campo verso il path giusto.
+  const giocatori = {};
+  for (const uid in playersDB) giocatori[uid] = { ...playersDB[uid], ...privateDB[uid] };
 
   // Stato locale mutabile
   const sl = {};
@@ -176,7 +191,8 @@ export async function processaNotte(gameCode) {
     for (const key of Object.keys(curr)) {
       if (key.startsWith("_")) continue;
       if (orig[key] !== curr[key]) {
-        updates[`players/${uid}/${key}`] = curr[key];
+        const branch = PRIVATE_KEYS.has(key) ? "private" : "players";
+        updates[`${branch}/${uid}/${key}`] = curr[key];
       }
     }
   }
@@ -218,7 +234,7 @@ export async function processaNotte(gameCode) {
 
 // ── Riepilogo testuale per il modal "Alba" ────────────────────────────────────
 function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
-  const nome  = (uid) => giocatori[uid]?.name ?? uid;
+  const nome  = (uid) => escapeHtml(giocatori[uid]?.name ?? uid);
   const righe = [];
 
   const nomiMorti = mortiUids.map(nome);

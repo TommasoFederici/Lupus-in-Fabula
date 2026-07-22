@@ -1,7 +1,7 @@
 // assets/js/game.js
 import { db, auth } from "./firebase.js";
 import {
-  ref, onValue, get, update, push
+  ref, onValue, get, update, push, runTransaction
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { ROLES, checkWinConditions, playerEsceNotte, calcSpettroProb, countWolves } from "./engine/roles.js";
 import { ROLE_DATA } from "./engine/roleData.js";
@@ -66,6 +66,11 @@ function updateUndoBtn() {
     : "↩ Nessuna azione da annullare";
 }
 
+// ── Tema dinamico giorno/notte ───────────────────────────────────────────────
+function applyPhaseTheme(phase) {
+  document.body.classList.toggle("phase-day", phase === "day");
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 let gameSetup = false;
 auth.onAuthStateChanged(async (user) => {
@@ -81,7 +86,7 @@ auth.onAuthStateChanged(async (user) => {
   isHost = currentPlayerData.role === "host";
 
   onValue(ref(db, `games/${gameCode}/state/status`), (s) => {
-    if (s.val() === "ended") window.location.href = `lobby?gameCode=${gameCode}`;
+    if (s.val() === "ended") window.location.href = `lobby.html?gameCode=${gameCode}`;
   });
 
   if (isHost) setupNarrator();
@@ -94,23 +99,23 @@ auth.onAuthStateChanged(async (user) => {
 function setupPlayer() {
   document.getElementById("player-view").style.display = "flex";
 
-  const roleCard  = document.getElementById("role-card");
-  const toggleBtn = document.getElementById("toggle-card");
-  const statusEl  = document.getElementById("player-status");
+  const roleCard     = document.getElementById("role-card");
+  const roleCardBack = document.getElementById("role-card-back");
+  const toggleBtn    = document.getElementById("toggle-card");
+  const statusEl     = document.getElementById("player-status");
 
   function showRole() {
     const nome  = isSpettroPlayer ? "Spettro del Villaggio" : (currentPlayerData.gameRole ?? "???");
     const dati  = ROLE_DATA[nome];
     const emoji = ROLE_EMOJI[nome] ?? "";
     const desc  = dati?.descrizioneLunga ?? dati?.descrizione ?? "";
-    roleCard.innerHTML = `
+    roleCardBack.innerHTML = `
       <div class="role-reveal-name">${emoji} ${nome}</div>
       ${desc ? `<div class="role-reveal-desc">${desc}</div>` : ""}`;
     roleCard.classList.add("revealed");
     toggleBtn.classList.add("holding");
   }
   function hideRole() {
-    roleCard.innerHTML = "???";
     roleCard.classList.remove("revealed");
     toggleBtn.classList.remove("holding");
   }
@@ -134,22 +139,51 @@ function setupPlayer() {
     if (e.target === e.currentTarget) closeRoleWiki();
   });
 
-  onValue(ref(db, `games/${gameCode}/state/spettro`), (snap) => {
-    isSpettroPlayer = snap.val() === currentUser.uid;
-  });
+  const playerViewEl = document.getElementById("player-view");
+  const deadOverlayEl = document.getElementById("dead-x-overlay");
 
-  onValue(ref(db, `games/${gameCode}/players/${currentUser.uid}`), (snap) => {
-    const p = snap.val();
+  function updateStatusAndDeadState(p) {
     if (!p) return;
-    currentPlayerData = p;
-
     const stati = [];
+    const isDead = !isSpettroPlayer && !p.isAlive;
     if (isSpettroPlayer)   stati.push("👻 Sei lo Spettro del Villaggio");
     else if (!p.isAlive)   stati.push("💀 Sei morto");
     if (p.isMuted)         stati.push("🤐 Sei silenziato oggi");
 
     statusEl.textContent   = stati.join(" · ");
     statusEl.style.display = stati.length ? "block" : "none";
+
+    playerViewEl.classList.toggle("is-dead", isDead);
+    deadOverlayEl.classList.toggle("visible", isDead);
+  }
+
+  onValue(ref(db, `games/${gameCode}/state/spettro`), (snap) => {
+    isSpettroPlayer = snap.val() === currentUser.uid;
+    updateStatusAndDeadState(currentPlayerData);
+  });
+
+  onValue(ref(db, `games/${gameCode}/state/phase`), (snap) => {
+    applyPhaseTheme(snap.val());
+  });
+
+  // Dati pubblici (name/isAlive/isMuted) e privati (gameRole) arrivano da path
+  // separati (vedi database.rules.json) — vanno uniti localmente per il proprio
+  // giocatore, che ha accesso di lettura a entrambi.
+  let _pubData  = currentPlayerData ?? {};
+  let _privData = {};
+  function applyPlayerMerge() { currentPlayerData = { ..._pubData, ..._privData }; }
+
+  onValue(ref(db, `games/${gameCode}/players/${currentUser.uid}`), (snap) => {
+    const p = snap.val();
+    if (!p) return;
+    _pubData = p;
+    applyPlayerMerge();
+    updateStatusAndDeadState(p);
+  });
+
+  onValue(ref(db, `games/${gameCode}/private/${currentUser.uid}`), (snap) => {
+    _privData = snap.val() ?? {};
+    applyPlayerMerge();
   });
 }
 
@@ -236,13 +270,26 @@ function closeRoleWiki() {
 // ══════════════════════════════════════════════════════════════════════════════
 // NARRATOR VIEW
 // ══════════════════════════════════════════════════════════════════════════════
+// L'host è l'unico client con accesso di lettura a games/{code}/private
+// (vedi database.rules.json): uniamo qui i campi segreti (gameRole, flag
+// one-shot) dentro players/{uid} così tutto il resto del file può continuare
+// a leggere p.gameRole come prima, senza toccare ogni singolo call site.
+function mergePrivateIntoPlayers(gameData) {
+  if (!gameData.private) return gameData;
+  const players = { ...gameData.players };
+  for (const uid in gameData.private) {
+    players[uid] = { ...players[uid], ...gameData.private[uid] };
+  }
+  return { ...gameData, players };
+}
+
 function setupNarrator() {
   document.getElementById("narrator-view").style.display = "block";
 
   onValue(gameRef, (snap) => {
     const gameData = snap.val();
     if (!gameData) return;
-    renderNarratorView(gameData);
+    renderNarratorView(mergePrivateIntoPlayers(gameData));
   });
 
   document.getElementById("toggle-phase-btn").addEventListener("click", handlePhaseToggle);
@@ -288,6 +335,8 @@ function renderNarratorView(gameData) {
   const phase       = gameData.state?.phase        ?? "night";
   const nightNumber = gameData.state?.nightNumber   ?? 1;
   const skipFirst   = gameData.state?.skipFirstNight ?? false;
+
+  applyPhaseTheme(phase);
 
   // Reset wizard quando inizia una nuova notte
   if (nightNumber !== lastNightNumber) {
@@ -344,7 +393,7 @@ function renderSecretDashboard(gameData) {
         : `<span style="color:#40c0a0">✅ Vivo</span>`;
     const boost = uid === spettroBoost ? ` <span style="color:#b090f0">👻×2</span>` : "";
     return `<tr>
-      <td>${p.name ?? uid}${boost}</td>
+      <td>${ui.escapeHtml(p.name ?? uid)}${boost}</td>
       <td>${emoji} ${ruolo}</td>
       <td style="color:${fColor}">${fazione}</td>
       <td>${stato}</td>
@@ -416,7 +465,7 @@ function renderNightDashboard(gameData, skipFirst) {
   const giocatoriMap  = Object.fromEntries(activePlayers);
   const controlli     = ruolo.controlliNotte(giocatoriMap, azioni, stato, { allPlayers: players, rolesDB });
   const playersChips  = allPlayersWithRole
-    .map(([, p]) => `<span class="wiz-chip${p.isAlive ? "" : " wiz-chip--dead"}">${p.isAlive ? "" : "☠ "}${p.name}</span>`)
+    .map(([, p]) => `<span class="wiz-chip${p.isAlive ? "" : " wiz-chip--dead"}">${p.isAlive ? "" : "☠ "}${ui.escapeHtml(p.name)}</span>`)
     .join("");
 
   // ── Dots di progresso
@@ -591,10 +640,10 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
       const ctrl = controlli[0];
       if (ctrl.tipo === "checkbox-multi") {
         const uids = Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k]);
-        azioneText = uids.length ? uids.map(uid => players[uid]?.name ?? uid).join(", ") : "Nessuno";
+        azioneText = uids.length ? uids.map(uid => ui.escapeHtml(players[uid]?.name ?? uid)).join(", ") : "Nessuno";
       } else if (ctrl.tipo === "radio") {
         const uid = azioni[ctrl.chiaveAzione];
-        azioneText = uid ? (players[uid]?.name ?? uid) : "Nessuno";
+        azioneText = uid ? ui.escapeHtml(players[uid]?.name ?? uid) : "Nessuno";
       } else if (ctrl.tipo === "select-ruolo") {
         azioneText = azioni[ctrl.chiaveAzione] ?? "Nessuno";
       }
@@ -617,14 +666,14 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
     esiti = `<div class="recap-outcome-row recap-ok">🌙 Stanotte non è morto nessuno.</div>`;
   } else {
     mortiReali.forEach(uid => {
-      esiti += `<div class="recap-outcome-row recap-death">💀 ${players[uid]?.name ?? uid} muore stanotte</div>`;
+      esiti += `<div class="recap-outcome-row recap-death">💀 ${ui.escapeHtml(players[uid]?.name ?? uid)} muore stanotte</div>`;
     });
     figlioUids.forEach(uid => {
-      esiti += `<div class="recap-outcome-row recap-transform">🐺 ${players[uid]?.name ?? uid} si trasforma in Lupo</div>`;
+      esiti += `<div class="recap-outcome-row recap-transform">🐺 ${ui.escapeHtml(players[uid]?.name ?? uid)} si trasforma in Lupo</div>`;
     });
   }
   if (savedUid && killed.includes(savedUid)) {
-    esiti += `<div class="recap-outcome-row recap-save">🏠 ${players[savedUid]?.name ?? savedUid} si salva (Puttana)</div>`;
+    esiti += `<div class="recap-outcome-row recap-save">🏠 ${ui.escapeHtml(players[savedUid]?.name ?? savedUid)} si salva (Puttana)</div>`;
   }
 
   // ── Costruisci DOM ────────────────────────────────────────────────────────
@@ -710,8 +759,8 @@ function openPicker({ title, entries, multi, selectedKeys, optional }) {
         row.innerHTML = `
           <span class="picker-row-check">${isSel ? "✓" : "○"}</span>
           <div class="picker-row-info">
-            <span class="picker-row-name">${entry.label}</span>
-            ${entry.sublabel ? `<span class="picker-row-sub">${entry.sublabel}</span>` : ""}
+            <span class="picker-row-name">${ui.escapeHtml(entry.label)}</span>
+            ${entry.sublabel ? `<span class="picker-row-sub">${ui.escapeHtml(entry.sublabel)}</span>` : ""}
           </div>`;
         row.addEventListener("click", () => {
           if (multi) {
@@ -795,7 +844,7 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
   function refreshBtn() {
     const sel = currentDisplay();
     selectBtn.innerHTML = `
-      <span class="${sel ? "btn-sel-value" : "btn-sel-empty"}">${sel ?? "Tocca per scegliere…"}</span>
+      <span class="${sel ? "btn-sel-value" : "btn-sel-empty"}">${sel ? ui.escapeHtml(sel) : "Tocca per scegliere…"}</span>
       <span class="btn-sel-arrow">›</span>`;
   }
   refreshBtn();
@@ -897,7 +946,7 @@ function getTempFeedbackResult(ruolo, ctrl, tempFeedback, players) {
   const fb = tempFeedback?.[ruolo.id];
   if (!fb) return null;
 
-  const n = (uid) => players[uid]?.name ?? uid;
+  const n = (uid) => ui.escapeHtml(players[uid]?.name ?? uid);
 
   const investigaResult = (uid, ris) => ris === "lupo"
     ? { text: `${n(uid)} è un Lupo`,      tipo: "danger",  icon: "🐺" }
@@ -976,8 +1025,8 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
     const baseFaz    = roleObj?.fazioneApparente ?? roleObj?.fazione ?? "villaggio";
     const isLupo     = isSciamano ? baseFaz !== "lupi" : baseFaz === "lupi";
     return isLupo
-      ? { text: `${target.name} è un Lupo`,   tipo: "danger", icon: "🐺" }
-      : { text: `${target.name} è Innocente`, tipo: "ok",     icon: "✅" };
+      ? { text: `${ui.escapeHtml(target.name)} è un Lupo`,   tipo: "danger", icon: "🐺" }
+      : { text: `${ui.escapeHtml(target.name)} è Innocente`, tipo: "ok",     icon: "✅" };
   }
 
   // Investigatore / Mutaforma-come-Investigatore
@@ -986,8 +1035,8 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
     if (!target) return null;
     const esce = playerEsceNotte(newValue, target, { saved: azioni["saved"] ?? null, lovers: azioni["lovers"] ?? {} }, stato ?? {});
     return esce
-      ? { text: `${target.name} è uscito di casa`,   tipo: "warning", icon: "🚶" }
-      : { text: `${target.name} è rimasto in casa`,  tipo: "ok",      icon: "🏠" };
+      ? { text: `${ui.escapeHtml(target.name)} è uscito di casa`,   tipo: "warning", icon: "🚶" }
+      : { text: `${ui.escapeHtml(target.name)} è rimasto in casa`,  tipo: "ok",      icon: "🏠" };
   }
 
   // Medium / Mutaforma-come-Medium
@@ -996,7 +1045,7 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
     if (!target) return null;
     const roleObj = Object.values(ROLES).find(r => r.nome === target.gameRole);
     const fazione = roleObj?.fazione ?? "villaggio";
-    return { text: `${target.name}: fazione ${fazione}`, tipo: "info", icon: "🕯️", fazione };
+    return { text: `${ui.escapeHtml(target.name)}: fazione ${fazione}`, tipo: "info", icon: "🕯️", fazione };
   }
 
   // Lupo Cieco — il trio viene calcolato approssimativamente lato client
@@ -1022,14 +1071,14 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
     if (!target || !azioni.boiaRole) return null;
     const corretto = target.gameRole === azioni.boiaRole;
     return corretto
-      ? { text: `${target.name} → ✅ Indovinato`,    tipo: "danger",  icon: "🪓" }
+      ? { text: `${ui.escapeHtml(target.name)} → ✅ Indovinato`,    tipo: "danger",  icon: "🪓" }
       : { text: `Sbagliato — il Boia muore`,          tipo: "warning", icon: "🪓" };
   }
 
   // Bugiardo
   if (ruolo.nome === "Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget") {
     if (!target) return null;
-    return { text: `${target.name} era: ${target.gameRole}`, tipo: "info", icon: "🤥", ruoloScoperto: target.gameRole };
+    return { text: `${ui.escapeHtml(target.name)} era: ${target.gameRole}`, tipo: "info", icon: "🤥", ruoloScoperto: target.gameRole };
   }
 
   // Lupo Mannaro (feedback su mannaro_target dopo aver selezionato mannaro_role)
@@ -1037,7 +1086,7 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
     if (!target || !azioni.mannaro_role) return null;
     const corretto = target.gameRole === azioni.mannaro_role;
     return corretto
-      ? { text: `${target.name} → ✅ Caccia riuscita`, tipo: "danger",  icon: "🌕" }
+      ? { text: `${ui.escapeHtml(target.name)} → ✅ Caccia riuscita`, tipo: "danger",  icon: "🌕" }
       : { text: `Ruolo sbagliato — caccia fallita`,     tipo: "info",    icon: "🌕" };
   }
 
@@ -1085,6 +1134,21 @@ async function fillBotAction(ruolo, azioni, activePlayers, rolesDB, stato) {
 }
 
 
+// Se il giustiziato è il Kamikaze, chiede al narratore chi tra i vivi ha
+// votato per lui, così la rappresaglia (effettoPassivo) ha un bersaglio reale
+// invece del votanti:[] hardcoded di prima (che la rendeva sempre inattiva).
+async function pickKamikazeVotanti(uid, targetPlayer, players) {
+  if (targetPlayer?.gameRole !== "Kamikaze") return [];
+  const alive = Object.entries(players).filter(([u, p]) => p.role !== "host" && p.isAlive && u !== uid);
+  if (alive.length === 0) return [];
+  const picked = await openPicker({
+    title: "Chi ha votato per il Kamikaze?",
+    entries: alive.map(([u, p]) => ({ id: u, label: p.name })),
+    multi: true, selectedKeys: []
+  });
+  return picked instanceof Set ? [...picked] : [];
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // DAY TABLE — eliminazione/resurrezione rapida
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1102,7 +1166,7 @@ function renderDayTable(gameData) {
 
     const info = document.createElement("span");
     info.className = "player-info";
-    info.innerHTML = `<strong>${p.name}</strong> <span class="role-tag">${p.gameRole ?? "?"}</span>`;
+    info.innerHTML = `<strong>${ui.escapeHtml(p.name)}</strong> <span class="role-tag">${p.gameRole ?? "?"}</span>`;
     if (spettroBoost === uid) info.innerHTML += ` <span class="badge badge-spettro">👻 ×2</span>`;
     if (p.isBot)    info.innerHTML += ` <span class="badge badge-bot">🤖 Bot</span>`;
     if (p.isMuted)  info.innerHTML += ` <span class="badge badge-muted">🤐 Silenz.</span>`;
@@ -1116,7 +1180,10 @@ function renderDayTable(gameData) {
       const upd = { isAlive: !p.isAlive };
       if (willDie) upd.isMuted = false;
       await update(ref(db, `games/${gameCode}/players/${uid}`), upd);
-      if (willDie) await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti: [] }, players);
+      if (willDie) {
+        const votanti = await pickKamikazeVotanti(uid, p, players);
+        await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti }, players);
+      }
     });
 
     row.append(info, killBtn);
@@ -1164,7 +1231,7 @@ function renderVoting(gameData) {
 
   // Banner promemoria voto doppio
   if (spettroBoost) {
-    const boostName = players[spettroBoost]?.name ?? spettroBoost;
+    const boostName = ui.escapeHtml(players[spettroBoost]?.name ?? spettroBoost);
     const banner = document.createElement("p");
     banner.className = "spettro-boost-banner";
     banner.innerHTML = `👻 Il voto di <strong>${boostName}</strong> vale doppio — conta +2 quando vota`;
@@ -1178,7 +1245,7 @@ function renderVoting(gameData) {
 
     const info = document.createElement("span");
     info.className = "vote-player";
-    info.innerHTML = `<strong>${p.name}</strong> <span class="role-tag">${p.gameRole ?? "?"}</span>`;
+    info.innerHTML = `<strong>${ui.escapeHtml(p.name)}</strong> <span class="role-tag">${p.gameRole ?? "?"}</span>`;
     if (condannato === uid) info.innerHTML += ` <span class="badge badge-condannato">🔥 Condannato</span>`;
 
     const voteCount = document.createElement("span");
@@ -1254,7 +1321,7 @@ function getCondannato(totali) {
 }
 
 async function handleMandaAlRogo(uid, players) {
-  if (!await ui.confirm(`Mandare al rogo ${players[uid]?.name}?`, {
+  if (!await ui.confirm(`Mandare al rogo ${ui.escapeHtml(players[uid]?.name)}?`, {
     icon: "🔥", confirmLabel: "Al Rogo!", danger: true
   })) return;
 
@@ -1286,22 +1353,22 @@ async function handleMandaAlRogo(uid, players) {
   }
 
   // Effetti passivi (Kamikaze, Folle...)
-  await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti: [] }, players);
+  const votanti = await pickKamikazeVotanti(uid, players[uid], players);
+  await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti }, players);
 
-  // Check win conditions dopo ogni morte di giorno
+  // Check win conditions dopo ogni morte di giorno.
+  // Il Folle vince istantaneamente se giustiziato — va calcolato PRIMA di
+  // checkWinConditions() (che non gestisce la fazione "solitari") e scritto
+  // su state/winner come ogni altro esito, così l'overlay persiste al refresh
+  // invece di sparire (bug precedente: era solo un overlay locale mai salvato).
   const playersAggiornati = { ...players, [uid]: { ...players[uid], isAlive: false } };
-  const vincitore = checkWinConditions(playersAggiornati, lastGameData?.state ?? {});
+  const vincitore = players[uid]?.gameRole === "Folle"
+    ? "solitari"
+    : checkWinConditions(playersAggiornati, lastGameData?.state ?? {});
   if (vincitore) {
     await update(ref(db, `games/${gameCode}/state`), { winner: vincitore });
     await push(ref(db, `games/${gameCode}/log`), {
       tipo: "vittoria", vincitore, giorno: (lastGameData?.state?.nightNumber ?? 2) - 1, timestamp: Date.now()
-    });
-  }
-
-  // Vittoria istantanea Folle
-  if (players[uid]?.gameRole === "Folle") {
-    triggerWin("Vince il Matto 🃏", async () => {
-      await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: true });
     });
   }
 
@@ -1343,11 +1410,25 @@ async function handlePhaseToggle() {
   const phase = stato.phase ?? "night";
 
   if (phase === "night") {
-    const riepilogo = await processaNotte(gameCode);
-    // Svuota undo stack a inizio giorno
-    undoStack = [];
-    updateUndoBtn();
-    showSummaryModal(riepilogo);
+    // Lock transazionale: evita che un doppio-click/connessione lenta
+    // esegua processaNotte() due volte sulla stessa notte (nessuna operazione
+    // qui sotto è altrimenti atomica, essendo un get() seguito da update()).
+    const lockRef = ref(db, `games/${gameCode}/state/isProcessingNight`);
+    const lock = await runTransaction(lockRef, (curr) => curr === true ? undefined : true);
+    if (!lock.committed) {
+      ui.toast("Notte già in elaborazione…");
+      btn.disabled = false;
+      return;
+    }
+    try {
+      const riepilogo = await processaNotte(gameCode);
+      // Svuota undo stack a inizio giorno
+      undoStack = [];
+      updateUndoBtn();
+      showSummaryModal(riepilogo);
+    } finally {
+      await update(ref(db, `games/${gameCode}/state`), { isProcessingNight: false });
+    }
   } else {
     // Reset isMuted e voti a inizio notte
     const pSnap   = await get(ref(db, `games/${gameCode}/players`));

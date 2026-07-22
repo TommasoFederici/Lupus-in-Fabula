@@ -1,6 +1,6 @@
 // assets/js/app.js
 import { db, auth } from "./firebase.js";
-import { ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import { ref, set, get, runTransaction } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import * as ui from "./ui.js";
 
@@ -37,16 +37,20 @@ async function renderActiveGames() {
   list.innerHTML = "";
 
   for (const { gameCode, name } of saved) {
-    const snap = await get(ref(db, `games/${gameCode}`));
+    const [stateSnap, playersSnap] = await Promise.all([
+      get(ref(db, `games/${gameCode}/state`)),
+      get(ref(db, `games/${gameCode}/players`))
+    ]);
 
-    if (!snap.exists()) {
+    if (!playersSnap.exists()) {
       removeGame(gameCode);
       continue;
     }
 
-    const gameData = snap.val();
-    const status   = gameData.state?.status ?? "waiting";
-    const inGame   = !!gameData.players?.[user.uid];
+    const state    = stateSnap.val()   ?? {};
+    const players  = playersSnap.val() ?? {};
+    const status   = state.status ?? "waiting";
+    const inGame   = !!players[user.uid];
 
     if (!inGame) {
       removeGame(gameCode);
@@ -60,15 +64,15 @@ async function renderActiveGames() {
 
     const statusLabel = { waiting: "In lobby", running: "In corso", ended: "Terminata" }[status] ?? status;
     const statusClass = { waiting: "status--waiting", running: "status--running", ended: "status--ended" }[status] ?? "";
-    const isHost      = gameData.players[user.uid]?.role === "host";
-    const dest        = status === "running" ? `game?gameCode=${gameCode}` : `lobby?gameCode=${gameCode}`;
+    const isHost      = players[user.uid]?.role === "host";
+    const dest        = status === "running" ? `game.html?gameCode=${gameCode}` : `lobby.html?gameCode=${gameCode}`;
 
     const row = document.createElement("div");
     row.className = "active-game-row";
     row.innerHTML = `
       <span class="active-game-code">${gameCode}</span>
       <div class="active-game-info">
-        <strong>${name}</strong>
+        <strong>${ui.escapeHtml(name)}</strong>
         ${isHost ? "Narratore" : "Giocatore"} · <span class="active-game-status ${statusClass}">${statusLabel}</span>
       </div>
       <button class="btn-rejoin">Rientra</button>
@@ -104,6 +108,26 @@ function requireAuth() {
   });
 }
 
+// Genera un codice partita libero e la crea atomicamente (transazione:
+// evita sia la collisione con un codice già in uso sia una race tra client).
+async function createGameWithRetry(user, playerName, maxAttempts = 5) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidate = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const result = await runTransaction(ref(db, "games/" + candidate), (current) => {
+      if (current !== null) return; // codice già in uso → abort, si ritenta con un altro
+      return {
+        host: user.uid,
+        state: { status: "waiting" },
+        players: {
+          [user.uid]: { name: playerName, role: "host", isAlive: true, isMuted: false }
+        }
+      };
+    });
+    if (result.committed) return candidate;
+  }
+  throw new Error("Impossibile generare un codice partita libero.");
+}
+
 // --- Creazione nuova partita ---
 document.getElementById("new-game").addEventListener("click", async () => {
   const playerName = await ui.prompt("Come ti chiami?", {
@@ -117,26 +141,10 @@ document.getElementById("new-game").addEventListener("click", async () => {
   try { user = await requireAuth(); }
   catch { await ui.alert("Accesso anonimo non riuscito. Ricarica la pagina.", { icon: "🔒" }); return; }
 
-  const gameCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-  const gameRef  = ref(db, "games/" + gameCode);
-
   try {
-    await set(gameRef, {
-      host: user.uid,
-      state: { status: "waiting" },
-      players: {
-        [user.uid]: {
-          name:    playerName,
-          role:    "host",
-          isAlive: true,
-          gameRole: null,
-          isMuted: false
-        }
-      }
-    });
-
+    const gameCode = await createGameWithRetry(user, playerName);
     saveGame(gameCode, playerName);
-    window.location.href = `lobby?gameCode=${gameCode}`;
+    window.location.href = `lobby.html?gameCode=${gameCode}`;
 
   } catch (err) {
     console.error(err);
@@ -158,32 +166,38 @@ document.getElementById("join-game").addEventListener("click", async () => {
   catch { await ui.alert("Accesso anonimo non riuscito. Ricarica la pagina.", { icon: "🔒" }); return; }
 
   const gameCode = rawCode.trim().toUpperCase();
-  const gameRef  = ref(db, "games/" + gameCode);
 
-  let snapshot;
-  try { snapshot = await get(gameRef); }
+  let stateSnap, playersSnap;
+  try {
+    [stateSnap, playersSnap] = await Promise.all([
+      get(ref(db, `games/${gameCode}/state`)),
+      get(ref(db, `games/${gameCode}/players`))
+    ]);
+  }
   catch (err) { await ui.alert("Errore di connessione.", { icon: "❌" }); return; }
 
-  if (!snapshot.exists()) {
+  if (!playersSnap.exists()) {
     await ui.alert("Partita non trovata.", { icon: "🔍" });
     return;
   }
 
-  const gameData = snapshot.val();
-  if (gameData.state?.status === "running") {
+  const state   = stateSnap.val()   ?? {};
+  const players = playersSnap.val() ?? {};
+
+  if (state.status === "running") {
     await ui.alert("Questa partita è già in corso.", { icon: "🚫" });
     return;
   }
 
   // Già dentro? Rientra direttamente
-  if (gameData.players?.[user.uid]) {
-    saveGame(gameCode, gameData.players[user.uid].name);
-    window.location.href = `lobby?gameCode=${gameCode}`;
+  if (players[user.uid]) {
+    saveGame(gameCode, players[user.uid].name);
+    window.location.href = `lobby.html?gameCode=${gameCode}`;
     return;
   }
 
   // Tutti i nomi già presi, incluso il narratore
-  const existingNames = Object.values(gameData.players ?? {})
+  const existingNames = Object.values(players)
     .map(p => p.name.trim().toLowerCase());
 
   const playerName = await ui.prompt("Come ti chiami?", {
@@ -203,12 +217,11 @@ document.getElementById("join-game").addEventListener("click", async () => {
       name:    playerName,
       role:    "guest",
       isAlive: true,
-      gameRole: null,
       isMuted: false
     });
 
     saveGame(gameCode, playerName);
-    window.location.href = `lobby?gameCode=${gameCode}`;
+    window.location.href = `lobby.html?gameCode=${gameCode}`;
 
   } catch (err) {
     console.error(err);

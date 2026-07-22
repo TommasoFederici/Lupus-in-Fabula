@@ -4,7 +4,7 @@
 
 body {
   margin: 0;
-  font-family: 'Lora', serif;
+  font-family: var(--font-body);
   background: var(--bg-base);
   color: var(--text-prim);
   display: flex;
@@ -25,11 +25,10 @@ body {
 }
 
 .lobby-title {
-  font-family: 'Cinzel', serif;
-  font-size: 1.1rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--gold);
-  letter-spacing: 0.08em;
 }
 
 #game-code-bar {
@@ -45,15 +44,15 @@ body {
   user-select: none;
 }
 #game-code-bar:hover {
-  background: #1c1a12;
+  background: var(--bg-card);
   box-shadow: 0 0 10px var(--gold-glow);
 }
 
 #game-code {
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-display);
   font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: 0.35em;
+  letter-spacing: 0.25em;
   color: var(--gold);
 }
 
@@ -103,15 +102,15 @@ body {
 
 .tab-icon  { font-size: 1.15rem; line-height: 1; }
 .tab-label {
-  font-family: 'Cinzel', serif;
-  font-size: 0.58rem;
-  letter-spacing: 0.07em;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
   transition: color 0.15s;
 }
 
-/* Active state — gold label + top indicator pill */
+/* Active state — accento + indicatore superiore */
 .tab-btn.active .tab-label { color: var(--gold); }
 .tab-btn.active::before {
   content: '';
@@ -120,9 +119,9 @@ body {
   left: 50%;
   transform: translateX(-50%);
   width: 36px;
-  height: 2px;
+  height: 3px;
   background: var(--gold);
-  border-radius: 0 0 2px 2px;
+  border-radius: 0 0 3px 3px;
 }
 
 /* ── Player items ───────────────────────────────────────────────────────────── */
@@ -137,26 +136,27 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.8rem;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .btn-remove-bot {
   background: transparent;
-  color: #b06060;
-  border: 1px solid #5a2020;
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
+  color: var(--blood-light);
+  border: 1px solid color-mix(in srgb, var(--blood-light) 45%, transparent);
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
   font-size: 0.76rem;
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.15s;
   width: auto; margin: 0;
 }
-.btn-remove-bot:hover { background: #2a1010; transform: none; filter: none; }
+.btn-remove-bot:hover { background: color-mix(in srgb, var(--blood-light) 16%, transparent); transform: none; filter: none; }
 
 /* ── Dev section ────────────────────────────────────────────────────────────── */
 #dev-section {
@@ -165,55 +165,55 @@ body {
 
 #add-bot-btn {
   width: 100%;
-  background: #0e1a0c;
-  color: #7abf6a;
-  border: 1px solid #1a3a14;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
   font-size: 0.9rem;
+  font-weight: 700;
   padding: 0.6rem;
   border-radius: var(--radius-md);
-  font-family: 'Lora', serif;
+  font-family: var(--font-body);
   cursor: pointer;
   transition: background 0.15s;
   margin: 0;
 }
-#add-bot-btn:hover { background: #162814; transform: none; filter: none; }
+#add-bot-btn:hover { background: color-mix(in srgb, var(--success) 22%, transparent); transform: none; filter: none; }
 
 /* ── Start game button ──────────────────────────────────────────────────────── */
 #start-game-btn {
   width: 100%;
   padding: 0.85rem;
-  font-family: 'Cinzel', serif;
-  font-size: 1rem;
+  font-family: var(--font-display);
+  font-size: 1.02rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
   margin: 0.4rem 0 0;
   border-radius: var(--radius-md);
   background: var(--gold);
   color: var(--bg-deep);
   border: none;
   cursor: pointer;
-  transition: filter 0.2s, transform 0.15s;
+  box-shadow: var(--shadow-pop);
+  transition: filter 0.15s, transform 0.1s, box-shadow 0.1s;
 }
-#start-game-btn:hover  { filter: brightness(1.1); transform: translateY(-1px); }
-#start-game-btn:active { transform: translateY(0); }
+#start-game-btn:hover  { filter: brightness(1.08); }
+#start-game-btn:active { transform: translateY(3px); box-shadow: none; }
 
 .btn-close-lobby {
   width: 100%;
   padding: 0.6rem;
-  font-size: 0.82rem;
-  font-family: 'Cinzel', serif;
-  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  font-family: var(--font-display);
   margin-top: 0.4rem;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--blood-light, #c05050);
-  border: 1px solid rgba(180,60,60,0.4);
+  color: var(--blood-light);
+  border: 1px solid color-mix(in srgb, var(--blood-light) 40%, transparent);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 .btn-close-lobby:hover {
-  background: rgba(180,60,60,0.1);
-  border-color: rgba(180,60,60,0.7);
+  background: color-mix(in srgb, var(--blood-light) 10%, transparent);
+  border-color: color-mix(in srgb, var(--blood-light) 70%, transparent);
 }
 
 /* ── Role category headers ───────────────────────────────────────────────────── */
@@ -233,9 +233,9 @@ body {
   flex-shrink: 0;
 }
 .role-category-label {
-  font-family: 'Cinzel', serif;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 700;
 }
@@ -252,9 +252,9 @@ body {
   flex-direction: column;
   gap: 0.3rem;
 }
-.role-row[data-faction="lupi"]     { border-left-color: rgba(192, 72, 72, 0.7); }
-.role-row[data-faction="villaggio"]{ border-left-color: rgba(74, 170, 102, 0.6); }
-.role-row[data-faction="neutrale"] { border-left-color: rgba(144, 112, 212, 0.6); }
+.role-row[data-faction="lupi"]     { border-left-color: color-mix(in srgb, var(--blood-light) 65%, transparent); }
+.role-row[data-faction="villaggio"]{ border-left-color: color-mix(in srgb, var(--success) 60%, transparent); }
+.role-row[data-faction="neutrale"] { border-left-color: color-mix(in srgb, var(--violet) 60%, transparent); }
 
 .role-row-top {
   display: flex;
@@ -269,7 +269,7 @@ body {
 .role-row-name {
   flex: 1;
   font-size: 0.92rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-prim);
 }
 .role-row-info-btn {
@@ -287,7 +287,6 @@ body {
   cursor: pointer;
   flex-shrink: 0;
   transition: color 0.15s, border-color 0.15s;
-  width: auto; /* reset button override */
   width: 1.5rem;
 }
 .role-row-info-btn:hover { color: var(--gold); border-color: var(--gold); transform: none; filter: none; }
@@ -312,7 +311,7 @@ body {
   flex-shrink: 0;
 }
 .role-row-count {
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-display);
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--gold);
@@ -353,21 +352,21 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
   text-align: center;
-  border-radius: 8px;
+  border-radius: 999px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
   color: var(--text-muted);
-  transition: color 0.2s, border-color 0.2s;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
 .roles-counter[data-state="ok"] {
-  color: #40c090;
-  border-color: rgba(64,192,144,0.35);
-  background: rgba(64,192,144,0.07);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
 }
 .roles-counter[data-state="over"] {
-  color: #e06060;
-  border-color: rgba(220,80,80,0.35);
-  background: rgba(220,80,80,0.07);
+  color: var(--blood-light);
+  border-color: color-mix(in srgb, var(--blood-light) 35%, transparent);
+  background: color-mix(in srgb, var(--blood-light) 10%, transparent);
 }
 
 .roles-counter-bar {
@@ -375,22 +374,22 @@ body {
   padding: 0.4rem 0.7rem;
   font-size: 0.81rem;
   font-weight: 600;
-  border-radius: 8px;
+  border-radius: 999px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
   color: var(--text-muted);
   text-align: center;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
 .roles-counter-bar[data-state="ok"] {
-  color: #40c090;
-  border-color: rgba(64,192,144,0.35);
-  background: rgba(64,192,144,0.07);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
 }
 .roles-counter-bar[data-state="over"] {
-  color: #e06060;
-  border-color: rgba(220,80,80,0.35);
-  background: rgba(220,80,80,0.07);
+  color: var(--blood-light);
+  border-color: color-mix(in srgb, var(--blood-light) 35%, transparent);
+  background: color-mix(in srgb, var(--blood-light) 10%, transparent);
 }
 
 /* ── Wiki modal ──────────────────────────────────────────────────────────────── */
@@ -416,9 +415,8 @@ body {
   background: transparent;
   color: var(--text-sec);
   border: none;
-  font-family: 'Cinzel', serif;
-  font-size: 0.82rem;
-  letter-spacing: 0.04em;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
   cursor: pointer;
   padding: 0.2rem 0;
   width: auto; margin: 0;
@@ -427,9 +425,9 @@ body {
 .wiki-back-btn:hover { color: var(--gold); transform: none; filter: none; }
 
 .wiki-faction-badge {
-  font-family: 'Cinzel', serif;
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 700;
   padding: 0.25rem 0.75rem;
@@ -448,12 +446,11 @@ body {
 }
 .wiki-emoji { font-size: 2rem; line-height: 1; }
 #wiki-role-name {
-  font-family: 'Cinzel', serif;
+  font-family: var(--font-display);
   font-size: 1.45rem;
   font-weight: 700;
   color: var(--gold);
   margin: 0;
-  letter-spacing: 0.05em;
 }
 
 .wiki-modal-body {
@@ -472,9 +469,9 @@ body {
   padding: 1rem 1rem 0.9rem;
 }
 .wiki-card-title {
-  font-family: 'Cinzel', serif;
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
   margin: 0 0 0.75rem;
@@ -495,7 +492,7 @@ body {
   font-size: 0.87rem;
 }
 .wiki-info-label { color: var(--text-muted); }
-.wiki-info-value { font-weight: 600; color: var(--text-prim); }
+.wiki-info-value { font-weight: 700; color: var(--text-prim); }
 
 .wiki-long-desc {
   font-size: 0.87rem;
@@ -524,11 +521,10 @@ body {
 }
 .wiki-ability:last-child { margin-bottom: 0; }
 .wiki-ability-name {
-  font-family: 'Cinzel', serif;
-  font-size: 0.78rem;
-  color: #d08030;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: var(--gold);
   font-weight: 700;
-  letter-spacing: 0.04em;
   margin-bottom: 0.25rem;
 }
 .wiki-ability-desc {
@@ -565,7 +561,7 @@ body {
 }
 .toggle-label {
   font-size: 0.93rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-prim);
   line-height: 1.4;
 }
@@ -577,4 +573,4 @@ body {
   font-style: italic;
   margin-top: 0.1rem;
 }
-.toggle-dev { border-color: rgba(122, 191, 106, 0.25); }
+.toggle-dev { border-color: color-mix(in srgb, var(--success) 25%, transparent); }

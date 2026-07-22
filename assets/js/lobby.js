@@ -14,8 +14,6 @@ if (!gameCode) {
   window.location.href = "/";
 }
 
-const gameRef = ref(db, `games/${gameCode}`);
-
 let currentUser = null;
 let isHost      = false;
 let playerCount = 0;
@@ -123,18 +121,25 @@ auth.onAuthStateChanged(async (user) => {
 });
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
+// Nota: niente più lettura in blocco di games/{code} — i client non-host non
+// hanno accesso a quel path (vedi database.rules.json). Si legge solo ciò che
+// serve alla lobby (players/roles/state), granularmente.
 async function setupLobby() {
-  onValue(gameRef, async (snapshot) => {
-    const gameData = snapshot.val();
-    if (!gameData) return;
+  const cache  = { players: null, roles: {}, state: {} };
 
-    isHost = gameData.host === currentUser.uid;
-    const devMode = gameData.state?.devMode ?? false;
+  function renderAll() {
+    if (!cache.players) return; // aspetta almeno il primo snapshot dei giocatori
+    const players = cache.players;
+    const state   = cache.state;
+    const rolesDB = cache.roles;
+
+    isHost = players[currentUser.uid]?.role === "host";
+    const devMode = state.devMode ?? false;
 
     document.getElementById("game-code").textContent = gameCode;
 
-    renderPlayers(gameData.players ?? {}, gameData.host, devMode);
-    loadRoles(gameData.roles ?? {});
+    renderPlayers(players);
+    loadRoles(rolesDB);
     initRolesInFirebase(); // una tantum, no-op se già eseguito
 
     // Tab Opzioni visibile solo all'host
@@ -143,10 +148,10 @@ async function setupLobby() {
 
     if (isHost) {
       const skipChk = document.getElementById("skip-first-night");
-      if (skipChk) skipChk.checked = gameData.state?.skipFirstNight ?? false;
+      if (skipChk) skipChk.checked = state.skipFirstNight ?? false;
 
       const spettroChk = document.getElementById("spettro-enabled");
-      if (spettroChk) spettroChk.checked = gameData.state?.spettroEnabled ?? false;
+      if (spettroChk) spettroChk.checked = state.spettroEnabled ?? false;
 
       const devChk = document.getElementById("dev-mode");
       if (devChk) devChk.checked = devMode;
@@ -162,18 +167,18 @@ async function setupLobby() {
     const devSection = document.getElementById("dev-section");
     if (devSection) devSection.style.display = (isHost && devMode) ? "block" : "none";
 
-    renderRoleCounts(gameData.roles ?? {});
+    renderRoleCounts(rolesDB);
 
-    if (gameData.state?.status === "running") {
-      window.location.href = `game?gameCode=${gameCode}`;
+    if (state.status === "running") {
+      window.location.href = `game.html?gameCode=${gameCode}`;
     }
 
-    if (gameData.state?.status === "closed" && !isHost) {
+    if (state.status === "closed" && !isHost) {
       window.location.href = "/";
     }
 
     // Espulso dal narratore: il player non è più in lista
-    if (!isHost && !gameData.players?.[currentUser.uid]) {
+    if (!isHost && !players[currentUser.uid]) {
       window.location.href = "/";
     }
 
@@ -208,7 +213,11 @@ async function setupLobby() {
         });
       }
     }
-  });
+  }
+
+  onValue(ref(db, `games/${gameCode}/players`), (snap) => { cache.players = snap.val() ?? {}; renderAll(); });
+  onValue(ref(db, `games/${gameCode}/roles`),   (snap) => { cache.roles   = snap.val() ?? {}; renderAll(); });
+  onValue(ref(db, `games/${gameCode}/state`),   (snap) => { cache.state   = snap.val() ?? {}; renderAll(); });
 
   document.getElementById("game-code-bar")?.addEventListener("click", () => {
     navigator.clipboard?.writeText(gameCode).then(() => ui.toast("✓ Codice copiato!"));
@@ -233,7 +242,7 @@ async function setupLobby() {
 }
 
 // ── Players ───────────────────────────────────────────────────────────────────
-function renderPlayers(players, hostId, devMode) {
+function renderPlayers(players) {
   const container = document.getElementById("players-list");
   if (!container) return;
   container.innerHTML = "";
@@ -246,7 +255,7 @@ function renderPlayers(players, hostId, devMode) {
     const nameSpan = document.createElement("span");
     let text = p.isBot ? `🤖 ${p.name}` : p.name;
     if (uid === currentUser.uid) text += " (Tu)";
-    if (uid === hostId)          text += " ⭐";
+    if (p.role === "host")       text += " ⭐";
     nameSpan.textContent = text;
     div.appendChild(nameSpan);
 
@@ -270,7 +279,7 @@ async function addBot() {
   const botUid   = `bot_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
   await set(ref(db, `games/${gameCode}/players/${botUid}`), {
     name: `Bot ${botCount + 1}`, role: "guest",
-    isAlive: true, isBot: true, gameRole: null, isMuted: false
+    isAlive: true, isBot: true, isMuted: false
   });
 }
 
@@ -279,7 +288,7 @@ async function removeBot(uid) {
 }
 
 async function kickPlayer(uid, name) {
-  if (!await ui.confirm(`Espellere ${name} dalla lobby?`, {
+  if (!await ui.confirm(`Espellere ${ui.escapeHtml(name)} dalla lobby?`, {
     icon: "✕", confirmLabel: "Espelli", danger: true
   })) return;
   await remove(ref(db, `games/${gameCode}/players/${uid}`));
@@ -472,7 +481,8 @@ async function startGame() {
 
   const updates = {};
   activePlayers.forEach((uid, index) => {
-    updates[`players/${uid}/gameRole`] = rolePool[index];
+    // gameRole è segreto: vive su private/{uid}, non su players/{uid} (vedi database.rules.json)
+    updates[`private/${uid}/gameRole`] = rolePool[index];
     updates[`players/${uid}/isAlive`]  = true;
     updates[`players/${uid}/isMuted`]  = false;
   });
