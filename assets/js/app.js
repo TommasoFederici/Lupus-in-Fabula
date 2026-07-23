@@ -57,11 +57,6 @@ async function renderActiveGames() {
       continue;
     }
 
-    if (status === "closed") {
-      removeGame(gameCode);
-      continue;
-    }
-
     const statusLabel = { waiting: "In lobby", running: "In corso", ended: "Terminata" }[status] ?? status;
     const statusClass = { waiting: "status--waiting", running: "status--running", ended: "status--ended" }[status] ?? "";
     const isHost      = players[user.uid]?.role === "host";

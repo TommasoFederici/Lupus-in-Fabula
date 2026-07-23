@@ -5,6 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { ROLES } from "./engine/roles.js";
 import { ROLE_DATA, CATEGORIES, roleIconHtml } from "./engine/roleData.js";
+import { buildResidualStateUpdates } from "./engine/gameReset.js";
 import * as ui from "./ui.js";
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -174,11 +175,8 @@ async function setupLobby() {
       window.location.href = `game.html?gameCode=${gameCode}`;
     }
 
-    if (state.status === "closed" && !isHost) {
-      window.location.href = "/";
-    }
-
-    // Espulso dal narratore: il player non è più in lista
+    // Espulso dal narratore (o lobby chiusa: il nodo games/{code} intero
+    // viene rimosso da closeBtn, quindi anche il proprio player sparisce)
     if (!isHost && !players[currentUser.uid]) {
       window.location.href = "/";
     }
@@ -209,7 +207,7 @@ async function setupLobby() {
           if (!await ui.confirm("Chiudere la lobby e rimuovere tutti i giocatori?", {
             icon: "✕", confirmLabel: "Chiudi", danger: true
           })) return;
-          await update(ref(db, `games/${gameCode}/state`), { status: "closed" });
+          await remove(ref(db, `games/${gameCode}`));
           window.location.href = "/";
         });
       }
@@ -518,12 +516,10 @@ async function startGame() {
     [rolePool[i], rolePool[j]] = [rolePool[j], rolePool[i]];
   }
 
-  const updates = {};
+  const updates = buildResidualStateUpdates(players);
   activePlayers.forEach((uid, index) => {
     // gameRole è segreto: vive su private/{uid}, non su players/{uid} (vedi database.rules.json)
     updates[`private/${uid}/gameRole`] = rolePool[index];
-    updates[`players/${uid}/isAlive`]  = true;
-    updates[`players/${uid}/isMuted`]  = false;
   });
   updates["state/status"]      = "running";
   updates["state/phase"]       = "night";
@@ -539,9 +535,6 @@ async function startGame() {
   updates["state/spettroBoost"]    = null;
   updates["state/spettroLastPick"] = null;
   updates["state/winner"]          = null;
-  updates["log"]                   = null;
-  updates["nightActions"]          = null;
-  updates["dayActions"]            = null;
 
   await update(ref(db, `games/${gameCode}`), updates);
 }

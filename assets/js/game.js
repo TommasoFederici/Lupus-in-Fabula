@@ -6,7 +6,8 @@ import {
 import { ROLES, checkWinConditions, playerEsceNotte, calcSpettroProb, countWolves } from "./engine/roles.js";
 import { ROLE_DATA, roleIconHtml } from "./engine/roleData.js";
 import { processaNotte } from "./engine/nightEngine.js";
-import { formatLogEntry } from "./engine/eventLog.js";
+import { formatLogEntry, logEntryColor } from "./engine/eventLog.js";
+import { buildResidualStateUpdates } from "./engine/gameReset.js";
 import * as ui from "./ui.js";
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -17,26 +18,19 @@ let currentUser       = null;
 let isHost            = false;
 let currentPlayerData = null;
 
-// ── Wizard state (notte) ───────────────────────────────────────────────────
-let wizardStep      = 0;
-let wizardDone      = false;
-let lastNightNumber = -1;
-let lastGameData    = null;
-let lastSkipFirst   = false;
-let wizardRuoli     = [];
-
-const ROLE_EMOJI = {
-  "Lupo": "🐺", "Lupo Sciamano": "🔮", "Figlio del Lupo": "🌕",
-  "Contadino": "🌾", "Veggente": "🔭", "Puttana": "🏠",
-  "Investigatore": "🕵️", "Muto": "🤐", "Prete": "✝️",
-  "Kamikaze": "💥", "Amante": "💘", "Mitomane": "🎭",
-  "Matto": "🃏",
-  "Ammaestratore": "🦁", "Boia": "🪓",
-  "Indemoniato": "😈", "Stopper": "🪄", "Lupo Bugiardo": "🤥",
-  "Medium": "🕯️", "Angelo": "😇",
-  "Cacciatore": "⚔️", "Mucca Mannara": "🐮",
-  "Spettro del Villaggio": "👻"
+// ── Wizard state (notte) — incapsulato in un solo oggetto mutabile invece di
+// N variabili di modulo sparse, così i call site (undo incluso) leggono e
+// scrivono un unico posto.
+const wizardState = {
+  step: 0,
+  done: false,
+  lastNightNumber: -1,
+  gameData: null,
+  skipFirst: false,
+  ruoli: [],
+  undoStack: [], // { descrizione: string, applica: async () => void }
 };
+
 const FACTION_COLOR = {
   lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0", solitari: "#cc8844"
 };
@@ -45,19 +39,16 @@ const FACTION_COLOR = {
 let isSpettroPlayer = false;
 
 // ── Safe mode: stack annulla ultima azione ─────────────────────────────────
-// Ogni entry: { descrizione: string, applica: async () => void }
-let undoStack = [];
-
 function pushUndo(descrizione, applica) {
-  undoStack.push({ descrizione, applica });
+  wizardState.undoStack.push({ descrizione, applica });
   updateUndoBtn();
 }
 
 function updateUndoBtn() {
   const btn = document.getElementById("undo-btn");
   if (!btn) return;
-  const last = undoStack.at(-1);
-  btn.disabled = undoStack.length === 0;
+  const last = wizardState.undoStack.at(-1);
+  btn.disabled = wizardState.undoStack.length === 0;
   btn.textContent = last
     ? `↩ Annulla: ${last.descrizione}`
     : "↩ Nessuna azione da annullare";
@@ -103,7 +94,7 @@ function setupPlayer() {
   function showRole() {
     const nome  = isSpettroPlayer ? "Spettro del Villaggio" : (currentPlayerData.gameRole ?? "???");
     const dati  = ROLE_DATA[nome];
-    const icona = roleIconHtml(nome, ROLE_EMOJI[nome] ?? "");
+    const icona = roleIconHtml(nome, ROLE_DATA[nome]?.emoji ?? "");
     const desc  = dati?.descrizioneLunga ?? dati?.descrizione ?? "";
     roleCardBack.innerHTML = `
       <div class="role-reveal-name">${icona} ${nome}</div>
@@ -293,8 +284,8 @@ function setupNarrator() {
   // Undo button
   const undoBtn = document.getElementById("undo-btn");
   undoBtn?.addEventListener("click", async () => {
-    if (!undoStack.length) return;
-    const { applica } = undoStack.pop();
+    if (!wizardState.undoStack.length) return;
+    const { applica } = wizardState.undoStack.pop();
     await applica();
     updateUndoBtn();
   });
@@ -315,7 +306,7 @@ const WIN_LABELS = {
 };
 
 function renderNarratorView(gameData) {
-  lastGameData = gameData;
+  wizardState.gameData = gameData;
 
   // Overlay vittoria per fazioni (lupi, villaggio, ecc.) — solo se non già mostrato
   const winner = gameData.state?.winner ?? null;
@@ -330,10 +321,10 @@ function renderNarratorView(gameData) {
   applyPhaseTheme(phase);
 
   // Reset wizard quando inizia una nuova notte
-  if (nightNumber !== lastNightNumber) {
-    wizardStep      = 0;
-    wizardDone      = false;
-    lastNightNumber = nightNumber;
+  if (nightNumber !== wizardState.lastNightNumber) {
+    wizardState.step      = 0;
+    wizardState.done      = false;
+    wizardState.lastNightNumber = nightNumber;
   }
 
   document.getElementById("phase-indicator").textContent =
@@ -373,7 +364,7 @@ function renderSecretDashboard(gameData) {
 
   const rows = nonHost.map(([uid, p]) => {
     const ruolo   = p.gameRole ?? "???";
-    const emoji   = roleIconHtml(ruolo, ROLE_EMOJI[ruolo] ?? "•");
+    const emoji   = roleIconHtml(ruolo, ROLE_DATA[ruolo]?.emoji ?? "•");
     const plugin  = Object.values(ROLES).find(r => r.nome === ruolo);
     const fazione = plugin?.fazione ?? "villaggio";
     const fColor  = FACTION_COLOR[fazione] ?? "#e0a830";
@@ -401,7 +392,7 @@ function renderSecretDashboard(gameData) {
 // NIGHT WIZARD — un ruolo alla volta
 // ──────────────────────────────────────────────────────────────────────────────
 function renderNightDashboard(gameData, skipFirst) {
-  lastSkipFirst = skipFirst;
+  wizardState.skipFirst = skipFirst;
   const container = document.getElementById("night-dashboard");
   container.innerHTML = "";
 
@@ -416,17 +407,17 @@ function renderNightDashboard(gameData, skipFirst) {
 
   const firstNightMode = skipFirst && (stato.nightNumber ?? 1) === 1;
 
-  wizardRuoli = Object.values(ROLES)
+  wizardState.ruoli = Object.values(ROLES)
     .filter(r => r.attivoNotte && nomiAttivi.includes(r.nome))
     .filter(r => !r.isGhostRole || !!stato.spettro) // Spettro appare solo dopo la prima morte
     .sort((a, b) => a.prioritaNotte - b.prioritaNotte);
 
-  if (wizardRuoli.length === 0) {
+  if (wizardState.ruoli.length === 0) {
     container.innerHTML = "<p class='empty-msg'>Nessun ruolo attivo questa notte.</p>";
     return;
   }
 
-  if (wizardDone) {
+  if (wizardState.done) {
     renderNightRecap(container, gameData, activePlayers, players, azioni, tempFeedback);
     return;
   }
@@ -437,12 +428,12 @@ function renderNightDashboard(gameData, skipFirst) {
     );
   }
 
-  if (wizardStep >= wizardRuoli.length) wizardStep = wizardRuoli.length - 1;
+  if (wizardState.step >= wizardState.ruoli.length) wizardState.step = wizardState.ruoli.length - 1;
 
-  const ruolo         = wizardRuoli[wizardStep];
-  const total         = wizardRuoli.length;
+  const ruolo         = wizardState.ruoli[wizardState.step];
+  const total         = wizardState.ruoli.length;
   const roleColor     = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
-  const emoji         = roleIconHtml(ruolo.nome, ROLE_EMOJI[ruolo.nome] ?? "•");
+  const emoji         = roleIconHtml(ruolo.nome, ROLE_DATA[ruolo.nome]?.emoji ?? "•");
   const allPlayersWithRole = ruolo.getWizardPlayers
     ? ruolo.getWizardPlayers(stato, players)
     : Object.entries(players).filter(([, p]) => p.gameRole === ruolo.nome && p.role !== "host");
@@ -460,8 +451,8 @@ function renderNightDashboard(gameData, skipFirst) {
     .join("");
 
   // ── Dots di progresso
-  const dots = wizardRuoli.map((_, i) => {
-    const cls = i < wizardStep ? "wiz-dot done" : i === wizardStep ? "wiz-dot active" : "wiz-dot";
+  const dots = wizardState.ruoli.map((_, i) => {
+    const cls = i < wizardState.step ? "wiz-dot done" : i === wizardState.step ? "wiz-dot active" : "wiz-dot";
     return `<span class="${cls}"></span>`;
   }).join("");
 
@@ -470,7 +461,7 @@ function renderNightDashboard(gameData, skipFirst) {
   card.innerHTML = `
     <div class="wiz-progress">
       <div class="wiz-dots">${dots}</div>
-      <span class="wiz-step-lbl">Passo ${wizardStep + 1} / ${total}</span>
+      <span class="wiz-step-lbl">Passo ${wizardState.step + 1} / ${total}</span>
     </div>
     <div class="wiz-role-header">
       <span class="wiz-role-emoji">${emoji}</span>
@@ -499,19 +490,19 @@ function renderNightDashboard(gameData, skipFirst) {
 
     const nav = document.createElement("div");
     nav.className = "wiz-nav";
-    if (wizardStep > 0) {
+    if (wizardState.step > 0) {
       const backBtn = document.createElement("button");
       backBtn.className = "wiz-btn wiz-btn-back";
       backBtn.textContent = "← Indietro";
-      backBtn.addEventListener("click", () => { wizardStep--; renderNightDashboard(lastGameData, skipFirst); });
+      backBtn.addEventListener("click", () => { wizardState.step--; renderNightDashboard(wizardState.gameData, skipFirst); });
       nav.appendChild(backBtn);
     }
     const proseguiBtn = document.createElement("button");
     proseguiBtn.className = "wiz-btn wiz-btn-next";
-    proseguiBtn.textContent = wizardStep < total - 1 ? "Prosegui →" : "✓ Completa notte →";
+    proseguiBtn.textContent = wizardState.step < total - 1 ? "Prosegui →" : "✓ Completa notte →";
     proseguiBtn.addEventListener("click", () => {
-      if (wizardStep < wizardRuoli.length - 1) { wizardStep++; } else { wizardDone = true; }
-      renderNightDashboard(lastGameData, lastSkipFirst);
+      if (wizardState.step < wizardState.ruoli.length - 1) { wizardState.step++; } else { wizardState.done = true; }
+      renderNightDashboard(wizardState.gameData, wizardState.skipFirst);
     });
     nav.appendChild(proseguiBtn);
     card.appendChild(nav);
@@ -546,13 +537,13 @@ function renderNightDashboard(gameData, skipFirst) {
   const nav = document.createElement("div");
   nav.className = "wiz-nav";
 
-  if (wizardStep > 0) {
+  if (wizardState.step > 0) {
     const backBtn = document.createElement("button");
     backBtn.className = "wiz-btn wiz-btn-back";
     backBtn.textContent = "← Indietro";
     backBtn.addEventListener("click", () => {
-      wizardStep--;
-      renderNightDashboard(lastGameData, skipFirst);
+      wizardState.step--;
+      renderNightDashboard(wizardState.gameData, skipFirst);
     });
     nav.appendChild(backBtn);
   }
@@ -571,12 +562,12 @@ function renderNightDashboard(gameData, skipFirst) {
       if (Object.keys(upd).length) await update(ref(db, `games/${gameCode}/nightActions`), upd);
     }
     await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: null });
-    if (wizardStep < wizardRuoli.length - 1) {
-      wizardStep++;
+    if (wizardState.step < wizardState.ruoli.length - 1) {
+      wizardState.step++;
     } else {
-      wizardDone = true;
+      wizardState.done = true;
     }
-    renderNightDashboard(lastGameData, lastSkipFirst);
+    renderNightDashboard(wizardState.gameData, wizardState.skipFirst);
   });
   nav.appendChild(skipBtn);
 
@@ -586,16 +577,16 @@ function renderNightDashboard(gameData, skipFirst) {
 
   const nextBtn = document.createElement("button");
   nextBtn.className = "wiz-btn wiz-btn-next";
-  nextBtn.textContent = wizardStep < total - 1 ? "Avanti →" : "✓ Completa notte →";
+  nextBtn.textContent = wizardState.step < total - 1 ? "Avanti →" : "✓ Completa notte →";
   nextBtn.disabled = hasUnfilledRequired;
   nextBtn.title = hasUnfilledRequired ? "Seleziona un bersaglio prima di proseguire" : "";
   nextBtn.addEventListener("click", () => {
-    if (wizardStep < wizardRuoli.length - 1) {
-      wizardStep++;
+    if (wizardState.step < wizardState.ruoli.length - 1) {
+      wizardState.step++;
     } else {
-      wizardDone = true;
+      wizardState.done = true;
     }
-    renderNightDashboard(lastGameData, lastSkipFirst);
+    renderNightDashboard(wizardState.gameData, wizardState.skipFirst);
   });
   nav.appendChild(nextBtn);
 
@@ -623,12 +614,12 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
 
   // ── Riga azione per ogni ruolo ────────────────────────────────────────────
   const actionRows = ruoliNotte.map(ruolo => {
-    const emoji = roleIconHtml(ruolo.nome, ROLE_EMOJI[ruolo.nome] ?? "•");
+    const emoji = roleIconHtml(ruolo.nome, ROLE_DATA[ruolo.nome]?.emoji ?? "•");
     const color = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
     const controlli = ruolo.controlliNotte(Object.fromEntries(activePlayers), azioni, stato);
+    const ctrl = controlli?.[0] ?? null;
     let azioneText = "–";
-    if (controlli?.length) {
-      const ctrl = controlli[0];
+    if (ctrl) {
       if (ctrl.tipo === "checkbox-multi") {
         const uids = Object.keys(azioni[ctrl.chiaveAzione] ?? {}).filter(k => azioni[ctrl.chiaveAzione][k]);
         azioneText = uids.length ? uids.map(uid => ui.escapeHtml(players[uid]?.name ?? uid)).join(", ") : "Nessuno";
@@ -641,9 +632,8 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
     }
     // Aggiungi feedback investigativo se presente
     const fb = tempFeedback?.[ruolo.id];
-    let feedbackText = "";
-    if (fb?.risultato) feedbackText = ` → <em>${fb.risultato === "lupo" ? "🐺 Lupo" : fb.risultato === "esce" ? "🚶 Esce" : fb.risultato === "innocente" ? "✅ Innocente" : "🏠 Resta"}</em>`;
-    else if (fb?.roleName) feedbackText = ` → <em>🎭 ${fb.roleName}</em>`;
+    const shortLabel = fb && ctrl ? feedbackShortLabel(ruolo, ctrl, fb) : null;
+    const feedbackText = shortLabel ? ` → <em>${shortLabel}</em>` : "";
 
     return `<div class="recap-action-row">
       <span class="recap-role-name" style="color:${color}">${emoji} ${ruolo.nome}</span>
@@ -705,9 +695,9 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
 
   // Torna al wizard
   wrap.querySelector("#recap-back-btn").addEventListener("click", () => {
-    wizardDone = false;
-    wizardStep = wizardRuoli.length - 1;
-    renderNightDashboard(lastGameData, lastSkipFirst);
+    wizardState.done = false;
+    wizardState.step = wizardState.ruoli.length - 1;
+    renderNightDashboard(wizardState.gameData, wizardState.skipFirst);
   });
 
   // Alba
@@ -848,7 +838,7 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
       ? `<div class="result-box result-${res.tipo}"><span class="res-icon">${res.icon ?? ""}</span>${res.text}</div>`
       : "";
   }
-  showFeedback(getTempFeedbackResult(ruolo, ctrl, tempFeedback, players));
+  showFeedback(displayFeedback(ruolo, ctrl, tempFeedback?.[ruolo.id], players));
 
   selectBtn.addEventListener("click", async () => {
     let entries, multi;
@@ -873,9 +863,10 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
 
     const prev        = azioni[ctrl.chiaveAzione] ?? null;
     const singleValue = ctrl.tipo !== "checkbox-multi" ? (picked ?? null) : null;
-    const liveResult  = singleValue !== null
-      ? computeNightResultForValue(ruolo, ctrl, singleValue, players, azioni, stato)
+    const fbPayload   = singleValue !== null
+      ? computeFeedbackPayload(ruolo, ctrl, singleValue, players, azioni, stato)
       : null;
+    const liveResult  = displayFeedback(ruolo, ctrl, fbPayload, players);
 
     if (ctrl.tipo === "checkbox-multi") {
       const newVal = {};
@@ -903,10 +894,7 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
     }
 
     // Scrivi tempFeedback su Firebase per persistenza dopo reload
-    if (liveResult) {
-      const fbPayload = buildTempFeedbackPayload(ruolo, ctrl, singleValue, liveResult);
-      if (fbPayload) await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: fbPayload });
-    }
+    if (fbPayload) await update(ref(db, `games/${gameCode}/tempFeedback`), { [ruolo.id]: fbPayload });
 
     // Mostra feedback subito nel DOM (non aspetta il round-trip Firebase)
     showFeedback(liveResult);
@@ -932,107 +920,119 @@ function buildWizardControl(ctrl, activePlayers, azioni, rolesDB, ruolo, players
   return wrapper;
 }
 
-// ── tempFeedback helpers ──────────────────────────────────────────────────────
-function getTempFeedbackResult(ruolo, ctrl, tempFeedback, players) {
-  const fb = tempFeedback?.[ruolo.id];
-  if (!fb) return null;
+// ── Feedback investigativo — un solo registro per ruolo/azione ────────────────
+// Prima c'erano 3 funzioni (computeNightResultForValue, buildTempFeedbackPayload,
+// getTempFeedbackResult) ciascuna con il proprio if/else per ruolo, da tenere
+// manualmente in sync: ogni nuovo ruolo investigativo andava aggiunto in tutte
+// e 3. Ora ogni ruolo ha UNA sola voce con:
+//  - compute(): dal valore scelto calcola il payload minimo da salvare su
+//    tempFeedback (serve lo stato di gioco: azioni, stato notte...)
+//  - display(): dal payload salvato (targetUid + esito) ricostruisce il testo
+//    mostrato (serve solo `players`, per il nome) — usata sia subito dopo la
+//    scelta (via il payload appena calcolato) sia dopo un reload.
+//  - shortLabel(): etichetta breve per la riga d'azione nel recap di fine notte.
+const FEEDBACK_HANDLERS = {
+  "Veggente:investigated": {
+    compute(newValue, players, azioni) {
+      const target = players[newValue];
+      if (!target) return null;
+      const isSciamano = azioni["sciamanoTarget"] === newValue;
+      const roleObj = Object.values(ROLES).find(r => r.nome === target.gameRole);
+      const baseFaz = roleObj?.fazioneApparente ?? roleObj?.fazione ?? "villaggio";
+      const risultato = (isSciamano ? baseFaz !== "lupi" : baseFaz === "lupi") ? "lupo" : "innocente";
+      return { targetUid: newValue, risultato };
+    },
+    display(fb, players) {
+      const name = ui.escapeHtml(players[fb.targetUid]?.name ?? fb.targetUid);
+      return fb.risultato === "lupo"
+        ? { text: `${name} è un Lupo`,   tipo: "danger", icon: "🐺" }
+        : { text: `${name} è Innocente`, tipo: "ok",     icon: "✅" };
+    },
+    shortLabel: (fb) => fb.risultato === "lupo" ? "🐺 Lupo" : "✅ Innocente",
+  },
+  "Investigatore:watched": {
+    compute(newValue, players, azioni, stato) {
+      const target = players[newValue];
+      if (!target) return null;
+      const esce = playerEsceNotte(newValue, target, { saved: azioni["saved"] ?? null, amanteCasa: azioni["amanteCasa"] ?? null }, stato ?? {});
+      return { targetUid: newValue, risultato: esce ? "esce" : "resta" };
+    },
+    display(fb, players) {
+      const name = ui.escapeHtml(players[fb.targetUid]?.name ?? fb.targetUid);
+      return fb.risultato === "esce"
+        ? { text: `${name} è uscito di casa`,  tipo: "warning", icon: "🚶" }
+        : { text: `${name} è rimasto in casa`, tipo: "ok",      icon: "🏠" };
+    },
+    shortLabel: (fb) => fb.risultato === "esce" ? "🚶 Esce" : "🏠 Resta",
+  },
+  "Medium:mediumTarget": {
+    compute(newValue, players) {
+      const target = players[newValue];
+      if (!target) return null;
+      const roleObj = Object.values(ROLES).find(r => r.nome === target.gameRole);
+      return { targetUid: newValue, fazione: roleObj?.fazione ?? "villaggio" };
+    },
+    display(fb, players) {
+      const name = ui.escapeHtml(players[fb.targetUid]?.name ?? fb.targetUid);
+      return { text: `${name}: fazione ${fb.fazione}`, tipo: "info", icon: "🕯️" };
+    },
+    shortLabel: (fb) => `🕯️ ${fb.fazione}`,
+  },
+  "Boia:boiaTarget": {
+    compute(newValue, players, azioni) {
+      const target = players[newValue];
+      if (!target || !azioni.boiaRole) return null;
+      return { targetUid: newValue, risultato: target.gameRole === azioni.boiaRole ? "ok" : "fail" };
+    },
+    display(fb, players) {
+      const name = ui.escapeHtml(players[fb.targetUid]?.name ?? fb.targetUid);
+      return fb.risultato === "ok"
+        ? { text: `${name} → ✅ Indovinato`,   tipo: "danger",  icon: "🪓" }
+        : { text: `Sbagliato — il Boia muore`, tipo: "warning", icon: "🪓" };
+    },
+    shortLabel: (fb) => fb.risultato === "ok" ? "🪓 Indovinato" : "🪓 Sbagliato",
+  },
+  "Lupo Bugiardo:bugiardoTarget": {
+    compute(newValue, players) {
+      const target = players[newValue];
+      if (!target) return null;
+      return { targetUid: newValue, ruoloScoperto: target.gameRole };
+    },
+    display(fb, players) {
+      const name = ui.escapeHtml(players[fb.targetUid]?.name ?? fb.targetUid);
+      return { text: `${name} era: ${fb.ruoloScoperto}`, tipo: "info", icon: "🤥" };
+    },
+    shortLabel: (fb) => `🤥 ${fb.ruoloScoperto}`,
+  },
+  "Mitomane:*": {
+    compute: (newValue) => ({ roleName: newValue }),
+    display: (fb) => ({ text: `Ruolo: ${fb.roleName}`, tipo: "info", icon: "🎭" }),
+    shortLabel: (fb) => `🎭 ${fb.roleName}`,
+  },
+};
 
-  const n = (uid) => ui.escapeHtml(players[uid]?.name ?? uid);
-
-  const investigaResult = (uid, ris) => ris === "lupo"
-    ? { text: `${n(uid)} è un Lupo`,      tipo: "danger",  icon: "🐺" }
-    : { text: `${n(uid)} è Innocente`,    tipo: "ok",      icon: "✅" };
-  const spiaNotte = (uid, ris) => ris === "esce"
-    ? { text: `${n(uid)} è uscito`,       tipo: "warning", icon: "🚶" }
-    : { text: `${n(uid)} è restato`,      tipo: "ok",      icon: "🏠" };
-
-  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated" && fb.risultato)
-    return investigaResult(fb.targetUid, fb.risultato);
-  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched" && fb.risultato)
-    return spiaNotte(fb.targetUid, fb.risultato);
-  if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget" && fb.fazione)
-    return { text: `${n(fb.targetUid)}: fazione ${fb.fazione}`, tipo: "info", icon: "🕯️" };
-  if (ruolo.nome === "Mitomane" && fb.roleName)
-    return { text: `Ruolo: ${fb.roleName}`, tipo: "info", icon: "🎭" };
-  if (ruolo.nome === "Boia" && fb.risultato)
-    return fb.risultato === "ok"
-      ? { text: `${n(fb.targetUid)} → ✅ Indovinato`,  tipo: "danger",  icon: "🪓" }
-      : { text: `Sbagliato — il Boia muore`, tipo: "warning", icon: "🪓" };
-  if (ruolo.nome === "Lupo Bugiardo" && fb.ruoloScoperto)
-    return { text: `${n(fb.targetUid)} era: ${fb.ruoloScoperto}`, tipo: "info", icon: "🤥" };
-  return null;
+function _feedbackHandler(ruolo, ctrl) {
+  return FEEDBACK_HANDLERS[`${ruolo.nome}:${ctrl.chiaveAzione}`] ?? FEEDBACK_HANDLERS[`${ruolo.nome}:*`] ?? null;
 }
 
-function buildTempFeedbackPayload(ruolo, ctrl, singleValue, result) {
-  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated")
-    return { targetUid: singleValue, risultato: result.tipo === "danger" ? "lupo" : "innocente" };
-  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched")
-    return { targetUid: singleValue, risultato: result.tipo === "warning" ? "esce" : "resta" };
-  if (ruolo.nome === "Mitomane")
-    return { roleName: singleValue };
-  if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget")
-    return { targetUid: singleValue, fazione: result.fazione };
-  if (ruolo.nome === "Boia" && ctrl.chiaveAzione === "boiaTarget")
-    return { targetUid: singleValue, risultato: result.tipo === "danger" ? "ok" : "fail" };
-  if (ruolo.nome === "Lupo Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget")
-    return { targetUid: singleValue, ruoloScoperto: result.ruoloScoperto };
-  return null;
-}
-
-// ── Night result (live, prima del round-trip Firebase) ────────────────────────
-function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stato) {
+// Dal valore appena scelto nel picker calcola il payload da salvare su
+// tempFeedback (null se il ruolo non ha feedback investigativo).
+function computeFeedbackPayload(ruolo, ctrl, newValue, players, azioni, stato) {
   if (!newValue) return null;
-  const target = players[newValue];
+  return _feedbackHandler(ruolo, ctrl)?.compute(newValue, players, azioni, stato) ?? null;
+}
 
-  // Veggente
-  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
-    if (!target) return null;
-    const isSciamano = azioni["sciamanoTarget"] === newValue;
-    const roleObj    = Object.values(ROLES).find(r => r.nome === target.gameRole);
-    const baseFaz    = roleObj?.fazioneApparente ?? roleObj?.fazione ?? "villaggio";
-    const isLupo     = isSciamano ? baseFaz !== "lupi" : baseFaz === "lupi";
-    return isLupo
-      ? { text: `${ui.escapeHtml(target.name)} è un Lupo`,   tipo: "danger", icon: "🐺" }
-      : { text: `${ui.escapeHtml(target.name)} è Innocente`, tipo: "ok",     icon: "✅" };
-  }
+// Dal payload (appena calcolato, o letto da Firebase dopo un reload)
+// ricostruisce il testo mostrato nella feedback box del wizard.
+function displayFeedback(ruolo, ctrl, fbPayload, players) {
+  if (!fbPayload) return null;
+  return _feedbackHandler(ruolo, ctrl)?.display(fbPayload, players) ?? null;
+}
 
-  // Investigatore
-  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
-    if (!target) return null;
-    const esce = playerEsceNotte(newValue, target, { saved: azioni["saved"] ?? null, amanteCasa: azioni["amanteCasa"] ?? null }, stato ?? {});
-    return esce
-      ? { text: `${ui.escapeHtml(target.name)} è uscito di casa`,   tipo: "warning", icon: "🚶" }
-      : { text: `${ui.escapeHtml(target.name)} è rimasto in casa`,  tipo: "ok",      icon: "🏠" };
-  }
-
-  // Medium
-  if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget") {
-    if (!target) return null;
-    const roleObj = Object.values(ROLES).find(r => r.nome === target.gameRole);
-    const fazione = roleObj?.fazione ?? "villaggio";
-    return { text: `${ui.escapeHtml(target.name)}: fazione ${fazione}`, tipo: "info", icon: "🕯️", fazione };
-  }
-
-  // Boia (feedback su boiaTarget dopo aver selezionato anche boiaRole)
-  if (ruolo.nome === "Boia" && ctrl.chiaveAzione === "boiaTarget") {
-    if (!target || !azioni.boiaRole) return null;
-    const corretto = target.gameRole === azioni.boiaRole;
-    return corretto
-      ? { text: `${ui.escapeHtml(target.name)} → ✅ Indovinato`,    tipo: "danger",  icon: "🪓" }
-      : { text: `Sbagliato — il Boia muore`,          tipo: "warning", icon: "🪓" };
-  }
-
-  // Lupo Bugiardo
-  if (ruolo.nome === "Lupo Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget") {
-    if (!target) return null;
-    return { text: `${ui.escapeHtml(target.name)} era: ${target.gameRole}`, tipo: "info", icon: "🤥", ruoloScoperto: target.gameRole };
-  }
-
-  // Mitomane (select-ruolo)
-  if (ruolo.nome === "Mitomane" && ctrl.tipo === "select-ruolo")
-    return { text: `Ruolo: ${newValue}`, tipo: "info", icon: "🎭" };
-
-  return null;
+// Etichetta breve per la riga d'azione nel recap di fine notte.
+function feedbackShortLabel(ruolo, ctrl, fbPayload) {
+  if (!fbPayload) return null;
+  return _feedbackHandler(ruolo, ctrl)?.shortLabel(fbPayload) ?? null;
 }
 
 // Riempie casualmente le azioni notturne di un ruolo assegnato a un bot.
@@ -1244,17 +1244,17 @@ async function handleMandaAlRogo(uid, players) {
   })) return;
 
   await update(ref(db, `games/${gameCode}/players/${uid}`), { isAlive: false, isMuted: false });
-  const _giorno = (lastGameData?.state?.nightNumber ?? 2) - 1;
+  const _giorno = (wizardState.gameData?.state?.nightNumber ?? 2) - 1;
   await push(ref(db, `games/${gameCode}/log`), {
     tipo: "morte_giorno", uid, giorno: _giorno, timestamp: Date.now()
   });
 
   // Assegna Spettro (probabilistico, solo se abilitato e non ancora assegnato)
-  if (lastGameData?.state?.spettroEnabled && !lastGameData?.state?.spettro) {
+  if (wizardState.gameData?.state?.spettroEnabled && !wizardState.gameData?.state?.spettro) {
     const nonHost = Object.values(players).filter(p => p.role !== "host");
     const N = nonHost.length;
     const W = countWolves(players);
-    const deathsSoFar = lastGameData.state?.spettroDeaths ?? 0;
+    const deathsSoFar = wizardState.gameData.state?.spettroDeaths ?? 0;
     const prob = calcSpettroProb(deathsSoFar, N, W);
     if (Math.random() < prob) {
       await update(ref(db, `games/${gameCode}`), {
@@ -1282,11 +1282,11 @@ async function handleMandaAlRogo(uid, players) {
   const playersAggiornati = { ...players, [uid]: { ...players[uid], isAlive: false } };
   const vincitore = players[uid]?.gameRole === "Matto"
     ? "solitari"
-    : checkWinConditions(playersAggiornati, lastGameData?.state ?? {});
+    : checkWinConditions(playersAggiornati, wizardState.gameData?.state ?? {});
   if (vincitore) {
     await update(ref(db, `games/${gameCode}/state`), { winner: vincitore });
     await push(ref(db, `games/${gameCode}/log`), {
-      tipo: "vittoria", vincitore, giorno: (lastGameData?.state?.nightNumber ?? 2) - 1, timestamp: Date.now()
+      tipo: "vittoria", vincitore, giorno: (wizardState.gameData?.state?.nightNumber ?? 2) - 1, timestamp: Date.now()
     });
   }
 
@@ -1312,7 +1312,7 @@ async function handlePassiveEffects(evento, giocatori) {
   }
 
   if (Object.keys(fbUpdates).length) await update(ref(db), fbUpdates);
-  const _giornoPassivo = (lastGameData?.state?.nightNumber ?? 2) - 1;
+  const _giornoPassivo = (wizardState.gameData?.state?.nightNumber ?? 2) - 1;
   for (const e of evLog) await push(ref(db, `games/${gameCode}/log`), { ...e, giorno: _giornoPassivo });
 }
 
@@ -1341,7 +1341,7 @@ async function handlePhaseToggle() {
     try {
       const riepilogo = await processaNotte(gameCode);
       // Svuota undo stack a inizio giorno
-      undoStack = [];
+      wizardState.undoStack = [];
       updateUndoBtn();
       showSummaryModal(riepilogo);
     } finally {
@@ -1396,35 +1396,6 @@ function closeSummaryModal() {
 // ──────────────────────────────────────────────────────────────────────────────
 // EVENT LOG
 // ──────────────────────────────────────────────────────────────────────────────
-// ── Colori per tipo evento ─────────────────────────────────────────────────
-const LOG_TIPO_COLOR = {
-  morte_notte:                    "#c84050",
-  attacco_lupo:                   "#c84050",
-  boia_esecuzione:                "#c84050",
-  giustiziere_esecuzione:         "#d05060",
-  morte_giorno:                   "#e07030",
-  kamikaze_vendetta:              "#e0a030",
-  amante_muore:                   "#d060a0",
-  figlio_diventa_lupo:            "#b070d0",
-  mitomane_copia:                 "#a080c0",
-  puttana_salvataggio_effettivo:  "#40b880",
-  angelo_resurrezione:            "#40b880",
-  veggente_risposta:              "#4080e0",
-  investigatore_risposta:         "#4080e0",
-  medium_risposta:                "#7070c0",
-  bugiardo_risposta:              "#c06080",
-  sciamano_insinuo:               "#8060c0",
-  muto_silenzia:                  "#806080",
-  folle_vince:                    "#a0c040",
-  bloccato_da_stopper:            "#6080a0",
-  stopper_blocca:                 "#6080a0",
-  ammaestratore_reindirizza:      "#c09040",
-  puttana_salva:                  "#40b880",
-  spettro_assegnato:              "#8070b0",
-  spettro_boost:                  "#8070b0",
-  spettro_no_boost:               "#8070b0",
-};
-
 function _inferPhase(e) {
   if (e.notte  != null) return { tipo: "notte",  numero: e.notte };
   if (e.giorno != null) return { tipo: "giorno", numero: e.giorno };
@@ -1478,7 +1449,7 @@ function renderEventLog(log, giocatori) {
       const time    = e.timestamp
         ? new Date(e.timestamp).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
         : "--:--";
-      const entryColor = LOG_TIPO_COLOR[e.tipo] ?? "var(--text-sec)";
+      const entryColor = logEntryColor(e.tipo) ?? "var(--text-sec)";
       return `<div class="log-entry" style="border-left-color:${entryColor}">
         <span class="log-time">${time}</span>
         <span style="color:${entryColor}">${formatLogEntry(e, giocatori)}</span>
@@ -1526,8 +1497,8 @@ function triggerWin(label, undoFn) {
 
 // ── Copia Log per WhatsApp ────────────────────────────────────────────────────
 async function copyLogToClipboard() {
-  const log       = lastGameData?.log     ?? {};
-  const giocatori = lastGameData?.players ?? {};
+  const log       = wizardState.gameData?.log     ?? {};
+  const giocatori = wizardState.gameData?.players ?? {};
   const allEvents = Object.entries(log).map(([_key, e]) => ({ ...e, _key }));
 
   if (allEvents.length === 0) {
@@ -1590,13 +1561,7 @@ async function handleEndGame() {
   const pSnap   = await get(ref(db, `games/${gameCode}/players`));
   const players = pSnap.val() ?? {};
 
-  const updates = { nightActions: null, dayActions: null, tempFeedback: null, log: null, "state/status": "ended" };
-  for (const uid in players) {
-    if (players[uid].role !== "host") {
-      updates[`players/${uid}/isAlive`] = true;
-      updates[`players/${uid}/isMuted`] = false;
-    }
-  }
+  const updates = { ...buildResidualStateUpdates(players), "state/status": "ended" };
 
   await update(ref(db, `games/${gameCode}`), updates);
 }

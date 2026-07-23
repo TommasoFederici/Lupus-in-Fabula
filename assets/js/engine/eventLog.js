@@ -19,6 +19,40 @@ export async function logEventi(gameCode, eventi) {
   }
 }
 
+// Colore per tipo evento (bordo/testo nel log) — un solo posto, accanto al
+// testo, invece che duplicato in game.js.
+const LOG_TIPO_COLOR = {
+  morte_notte:                    "#c84050",
+  attacco_lupo:                   "#c84050",
+  boia_esecuzione:                "#c84050",
+  giustiziere_esecuzione:         "#d05060",
+  morte_giorno:                   "#e07030",
+  kamikaze_vendetta:              "#e0a030",
+  amante_muore:                   "#d060a0",
+  figlio_diventa_lupo:            "#b070d0",
+  mitomane_copia:                 "#a080c0",
+  puttana_salvataggio_effettivo:  "#40b880",
+  angelo_resurrezione:            "#40b880",
+  veggente_risposta:              "#4080e0",
+  investigatore_risposta:         "#4080e0",
+  medium_risposta:                "#7070c0",
+  bugiardo_risposta:              "#c06080",
+  sciamano_insinuo:               "#8060c0",
+  muto_silenzia:                  "#806080",
+  folle_vince:                    "#a0c040",
+  bloccato_da_stopper:            "#6080a0",
+  stopper_blocca:                 "#6080a0",
+  ammaestratore_reindirizza:      "#c09040",
+  puttana_salva:                  "#40b880",
+  spettro_assegnato:              "#8070b0",
+  spettro_boost:                  "#8070b0",
+  spettro_no_boost:               "#8070b0",
+};
+
+export function logEntryColor(tipo) {
+  return LOG_TIPO_COLOR[tipo] ?? null;
+}
+
 // Formatta un evento in stringa leggibile per la UI
 export function formatLogEntry(e, giocatori = {}) {
   const nome = (uid) => escapeHtml(giocatori[uid]?.name ?? uid);

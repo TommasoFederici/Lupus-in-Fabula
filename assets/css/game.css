@@ -439,18 +439,6 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
 }
 .control-row input { cursor: pointer; accent-color: var(--gold); }
 
-.role-select {
-  width: 100%;
-  padding: 0.4rem 0.6rem;
-  background: var(--bg-surface);
-  color: var(--text-prim);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-body);
-  font-size: 0.93rem;
-  cursor: pointer;
-}
-
 /* ── Day Table ──────────────────────────────────────────────────────────────── */
 .player-row {
   display: flex;
@@ -787,31 +775,6 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
   border-radius: 4px;
   margin-bottom: 0.5rem;
 }
-.spettro-vote-section {
-  background: color-mix(in srgb, var(--violet) 10%, var(--bg-raised));
-  border: 1px solid color-mix(in srgb, var(--violet) 30%, transparent);
-  border-radius: var(--radius-sm);
-  padding: 0.6rem 0.8rem;
-  margin: 0.5rem 0;
-}
-.spettro-vote-label {
-  display: block;
-  font-size: 0.82rem;
-  color: var(--violet);
-  margin-bottom: 0.4rem;
-  font-weight: 700;
-}
-.spettro-vote-option {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  padding: 0.2rem 0;
-  cursor: pointer;
-  color: var(--text-muted);
-}
-.spettro-vote-option input { accent-color: var(--violet); cursor: pointer; }
-
 .btn-rogo {
   width: 100%;
   background: var(--blood-light);
