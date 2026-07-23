@@ -271,19 +271,24 @@ function renderPlayers(players) {
     const div = document.createElement("div");
     div.className = "player-item";
 
+    const nameWrap = document.createElement("span");
+    nameWrap.className = "player-name-wrap";
+
     const nameSpan = document.createElement("span");
     nameSpan.className = "player-name";
     let text = p.isBot ? `🤖 ${p.name}` : p.name;
     if (uid === currentUser.uid) text += " (Tu)";
     nameSpan.textContent = text;
-    div.appendChild(nameSpan);
+    nameWrap.appendChild(nameSpan);
 
     if (p.role === "host") {
       const hostIcon = document.createElement("span");
       hostIcon.className = "host-badge-icon";
       hostIcon.title = "Narratore";
-      div.appendChild(hostIcon);
+      nameWrap.appendChild(hostIcon);
     }
+
+    div.appendChild(nameWrap);
 
     // Host può espellere chiunque (non se stesso)
     if (isHost && uid !== currentUser.uid) {
