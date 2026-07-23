@@ -189,6 +189,22 @@ body {
   font-weight: 600;
 }
 
+.host-badge-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+  display: inline-block;
+  background-color: var(--gold);
+  -webkit-mask-image: url('../icons/generic/narratore.png');
+  mask-image: url('../icons/generic/narratore.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 .btn-remove-bot {
   background: transparent;
   color: var(--blood-light);
