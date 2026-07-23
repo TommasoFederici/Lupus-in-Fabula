@@ -209,3 +209,15 @@ body.phase-day {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ── Icone ruolo ───────────────────────────────────────────────────────────── */
+/* Sostituiscono l'emoji quando esiste un file in assets/icons/. Dimensionate
+   in em così si adattano al font-size del contesto (riga lobby, header
+   wizard, card reveal, ecc.) invece di una taglia fissa per ogni punto d'uso. */
+.role-icon-img {
+  width: 1.15em;
+  height: 1.15em;
+  object-fit: contain;
+  vertical-align: middle;
+  border-radius: 4px;
+}

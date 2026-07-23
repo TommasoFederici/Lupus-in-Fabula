@@ -2,19 +2,16 @@
 // Pipeline di risoluzione della notte.
 //
 // Ordine di risoluzione:
-//   0. Pre-pass Lupo Ciccione  — marca i vicini con _ciccione
 //   1. Raccolta intent          — ogni ruolo chiama processaNotte() per prioritaNotte
-//                                 (l'Illusionista blocca i ruoli successivi se targeting)
+//                                 (lo Stopper blocca i ruoli successivi se targeting)
 //   2. Salvataggio Puttana      — cancella _morteNottePending sul bersaglio ospitato
 //   3. Trasformazione Figlio    — Figlio del Lupo → Lupo invece di morire
-//   4. Immunità Mannari         — Lupo Mannaro e Mucca Mannara non muoiono per mano lupi
-//   5. Applicazione morti
-//   6. Aggiornamento infected   — segna i giocatori infettati dal Parassita
-//   7. Catena Amanti
-//   8. Check win conditions
-//   9. Pulizia flag temporanei
-//  10. Scrittura Firebase
-//  11. Log eventi
+//   4. Applicazione morti
+//   5. Catena Amanti            — se i lupi colpiscono la casa comune, muoiono tutti gli amanti lì
+//   6. Check win conditions
+//   7. Pulizia flag temporanei
+//   8. Scrittura Firebase
+//   9. Log eventi
 
 import { db } from "../firebase.js";
 import { ref, get, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
@@ -61,25 +58,13 @@ export async function processaNotte(gameCode) {
 
   const tuttiLog = [];
 
-  // ── 0. Pre-pass Lupo Ciccione ────────────────────────────────────────────
-  const viviList = Object.keys(sl).filter(uid => sl[uid].isAlive && sl[uid].role !== "host");
-  for (const uid of viviList) {
-    if (sl[uid].gameRole === "Lupo Ciccione") {
-      const idx   = viviList.indexOf(uid);
-      const left  = viviList[(idx - 1 + viviList.length) % viviList.length];
-      const right = viviList[(idx + 1) % viviList.length];
-      if (left  !== uid) sl[left]._ciccione  = true;
-      if (right !== uid) sl[right]._ciccione = true;
-    }
-  }
-
   // ── 1. Raccolta intent ───────────────────────────────────────────────────
   for (const ruolo of ruoliNotte) {
-    // Blocco Illusionista: se tutti i giocatori con questo ruolo sono bloccati, salta
+    // Blocco Stopper: se tutti i giocatori con questo ruolo sono bloccati, salta
     const roleUids  = Object.keys(sl).filter(u => sl[u].gameRole === ruolo.nome && sl[u].isAlive);
     const tuttiBloccati = roleUids.length > 0 && roleUids.every(u => sl[u]._bloccato);
     if (tuttiBloccati) {
-      tuttiLog.push({ tipo: "bloccato_da_illusionista", ruolo: ruolo.nome, notte: stato.nightNumber, timestamp: Date.now() });
+      tuttiLog.push({ tipo: "bloccato_da_stopper", ruolo: ruolo.nome, notte: stato.nightNumber, timestamp: Date.now() });
       continue;
     }
 
@@ -106,16 +91,9 @@ export async function processaNotte(gameCode) {
     }
   }
 
-  // ── 4. Immunità Mannari (non muoiono per mano dei lupi) ──────────────────
-  const killedByWolves = azioni.killed ? [azioni.killed] : [];
-  for (const uid of killedByWolves) {
-    if (["Lupo Mannaro", "Mucca Mannara"].includes(giocatori[uid]?.gameRole)) {
-      sl[uid]._morteNottePending = false;
-    }
-  }
-  // Giustiziere ignora le protezioni (_nonBloccabile) — già gestito dall'ordine di priorità
+  // Giustiziere/Cacciatore ignora le protezioni (_nonBloccabile) — già gestito dall'ordine di priorità
 
-  // ── 5. Applicazione morti ─────────────────────────────────────────────────
+  // ── 4. Applicazione morti ─────────────────────────────────────────────────
   const mortiNotte = [];
   for (const uid in sl) {
     if (sl[uid]._morteNottePending) {
@@ -126,7 +104,7 @@ export async function processaNotte(gameCode) {
     }
   }
 
-  // ── 5.5. Assegna Spettro (probabilistico) ───────────────────────────────────
+  // ── 4.5. Assegna Spettro (probabilistico) ───────────────────────────────────
   let newSpettroUid  = null;
   let newSpettroDeaths = stato.spettroDeaths ?? 0;
   if (stato.spettroEnabled && !stato.spettro && mortiNotte.length > 0) {
@@ -144,46 +122,40 @@ export async function processaNotte(gameCode) {
     }
   }
 
-  // ── 6. Aggiornamento infected ────────────────────────────────────────────
-  const infettatiNotte = Object.keys(sl).filter(u => sl[u]._infected && !giocatori[u]?._infected);
-  // Merge con infected già in stato
-  const infectedMap = { ...(stato.infected ?? {}) };
-  for (const uid of infettatiNotte) infectedMap[uid] = true;
-
-  // ── 7. Catena Amanti ──────────────────────────────────────────────────────
-  const lovers = Object.keys(azioni.lovers || {});
-  if (lovers.length > 0) {
-    const mortoAmante = mortiNotte.find(uid => lovers.includes(uid));
-    if (mortoAmante) {
-      for (const lUid of lovers) {
-        if (sl[lUid]?.isAlive) {
-          sl[lUid].isAlive = false;
-          tuttiLog.push({ tipo: "amante_muore", uid: lUid, perColpaDi: mortoAmante, notte: stato.nightNumber, timestamp: Date.now() });
-        }
-      }
+  // ── 5. Catena Amanti ──────────────────────────────────────────────────────
+  // Se i lupi hanno colpito la casa comune scelta dagli amanti (e l'attacco è
+  // andato a segno, cioè il bersaglio è finito tra i mortiNotte), tutti gli
+  // altri amanti ancora vivi muoiono con lui. Se i lupi colpiscono un'altra
+  // casa, o gli amanti dormono separati, non scatta nulla.
+  const casaAmanti = azioni.amanteCasa ?? null;
+  if (casaAmanti && mortiNotte.includes(casaAmanti)) {
+    const altriAmantiVivi = Object.keys(sl).filter(
+      uid => sl[uid].gameRole === "Amante" && sl[uid].isAlive && uid !== casaAmanti
+    );
+    for (const lUid of altriAmantiVivi) {
+      sl[lUid].isAlive = false;
+      tuttiLog.push({ tipo: "amante_muore", uid: lUid, perColpaDi: casaAmanti, notte: stato.nightNumber, timestamp: Date.now() });
     }
   }
 
-  // ── 8. Check win conditions ───────────────────────────────────────────────
+  // ── 6. Check win conditions ───────────────────────────────────────────────
   // Ricostruisci players da sl per il check
   const playersPerCheck = {};
   for (const uid in sl) playersPerCheck[uid] = { ...giocatori[uid], ...sl[uid] };
-  const vincitore = checkWinConditions(playersPerCheck, { ...stato, infected: infectedMap });
+  const vincitore = checkWinConditions(playersPerCheck, stato);
   if (vincitore) {
     tuttiLog.push({ tipo: "vittoria", vincitore, notte: stato.nightNumber, timestamp: Date.now() });
   }
 
-  // ── 9. Pulizia flag temporanei ────────────────────────────────────────────
+  // ── 7. Pulizia flag temporanei ────────────────────────────────────────────
   for (const uid in sl) {
     delete sl[uid]._morteNottePending;
     delete sl[uid]._sciamanoInsinuato;
-    delete sl[uid]._ciccione;
     delete sl[uid]._bloccato;
-    delete sl[uid]._infected; // spostato in stato.infected
     delete sl[uid]._nonBloccabile;
   }
 
-  // ── 10. Scrittura Firebase ────────────────────────────────────────────────
+  // ── 8. Scrittura Firebase ─────────────────────────────────────────────────
   const updates = {};
   for (const uid in sl) {
     const orig = giocatori[uid];
@@ -197,7 +169,6 @@ export async function processaNotte(gameCode) {
     }
   }
   updates["state/nightNumber"] = (stato.nightNumber ?? 1) + 1;
-  updates["state/infected"]    = Object.keys(infectedMap).length > 0 ? infectedMap : null;
   if (vincitore) updates["state/winner"] = vincitore;
   if (newSpettroUid) {
     updates["state/spettro"]               = newSpettroUid;
@@ -226,7 +197,7 @@ export async function processaNotte(gameCode) {
 
   await update(ref(db, `games/${gameCode}`), updates);
 
-  // ── 11. Log ───────────────────────────────────────────────────────────────
+  // ── 9. Log ────────────────────────────────────────────────────────────────
   await logEventi(gameCode, tuttiLog);
 
   return buildRiepilogo(mortiNotte, giocatori, tuttiLog, vincitore);
@@ -258,44 +229,32 @@ function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
     righe.push({ testo: `💔 ${nome(e.uid)} muore (amante di ${nome(e.perColpaDi)})`, tipo: "morte" })
   );
 
-  const veg = eventi.find(e => e.tipo === "veggente_risposta" && !e.viaMutaforma);
+  const veg = eventi.find(e => e.tipo === "veggente_risposta");
   if (veg) righe.push({
     testo: `🔭 Veggente → ${nome(veg.bersaglio)}: ${veg.risultato === "lupo" ? "LUPO 🐺" : "Innocente ✅"}`,
     tipo: "info"
   });
 
-  const inv = eventi.find(e => e.tipo === "investigatore_risposta" && !e.viaMutaforma);
+  const inv = eventi.find(e => e.tipo === "investigatore_risposta");
   if (inv) righe.push({
     testo: `🕵️ Investigatore → ${nome(inv.bersaglio)}: ${inv.risultato === "esce" ? "Esce 🚶" : "Resta 🏠"}`,
     tipo: "info"
   });
 
-  const mp = eventi.find(e => e.tipo === "missPurple_risposta");
-  if (mp) righe.push({ testo: `💜 Miss Purple: ${mp.conteggio} lupo/i in gioco`, tipo: "info" });
-
-  const med = eventi.find(e => e.tipo === "medium_risposta" && !e.viaMutaforma);
+  const med = eventi.find(e => e.tipo === "medium_risposta");
   if (med) righe.push({ testo: `🕯️ Medium → ${nome(med.bersaglio)}: fazione ${med.fazione}`, tipo: "info" });
-
-  const cieco = eventi.find(e => e.tipo === "lupoCieco_risposta");
-  if (cieco) righe.push({ testo: `🙈 Lupo Cieco: ${cieco.risultato === "si" ? "Lupo trovato nel trio 🐺" : "Nessun lupo nel trio ✅"}`, tipo: "info" });
 
   const boia = eventi.find(e => e.tipo === "boia_esecuzione");
   if (boia) righe.push({ testo: `🪓 Boia → ${nome(boia.bersaglio)} (${boia.ruoloDichiarato}): ${boia.indovinato ? "✅ Corretto" : "❌ Sbagliato"}`, tipo: boia.indovinato ? "morte" : "info" });
 
   const bug = eventi.find(e => e.tipo === "bugiardo_risposta");
-  if (bug) righe.push({ testo: `🤥 Bugiardo → ${nome(bug.bersaglio)}: era ${bug.ruoloScoperto}`, tipo: "info" });
+  if (bug) righe.push({ testo: `🤥 Lupo Bugiardo → ${nome(bug.bersaglio)}: era ${bug.ruoloScoperto}`, tipo: "info" });
 
   const ang = eventi.find(e => e.tipo === "angelo_resurrezione");
   if (ang) righe.push({ testo: `😇 Angelo ha resuscitato ${nome(ang.bersaglio)}`, tipo: "ok" });
 
   const gio = eventi.find(e => e.tipo === "giustiziere_esecuzione");
-  if (gio) righe.push({ testo: `⚔️ Giustiziere ha giustiziato ${nome(gio.bersaglio)}`, tipo: "morte" });
-
-  const mann = eventi.find(e => e.tipo === "mannaro_caccia");
-  if (mann) righe.push({ testo: `🌕 Lupo Mannaro → ${nome(mann.bersaglio)} (${mann.ruoloDichiarato}): ${mann.indovinato ? "✅ Caccia riuscita" : "❌ Mancato"}`, tipo: mann.indovinato ? "morte" : "info" });
-
-  const par = eventi.filter(e => e.tipo === "parassita_infetta");
-  if (par.length) righe.push({ testo: `🦠 Parassita ha infettato: ${par.map(e => nome(e.vittima)).join(", ")}`, tipo: "info" });
+  if (gio) righe.push({ testo: `⚔️ Cacciatore ha giustiziato ${nome(gio.bersaglio)}`, tipo: "morte" });
 
   if (vincitore) righe.push({ testo: `🏆 VITTORIA: ${vincitore.toUpperCase()}`, tipo: "trasforma" });
 

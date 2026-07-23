@@ -100,7 +100,23 @@ body {
 }
 .tab-btn:hover { background: rgba(255,255,255,0.03); transform: none; filter: none; }
 
-.tab-icon  { font-size: 1.15rem; line-height: 1; }
+.tab-icon {
+  width: 1.3rem;
+  height: 1.3rem;
+  display: inline-block;
+  background-color: var(--text-muted);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  transition: background-color 0.15s;
+}
+.tab-icon-lobby    { -webkit-mask-image: url('../icons/generic/lobby.png');        mask-image: url('../icons/generic/lobby.png'); }
+.tab-icon-roles    { -webkit-mask-image: url('../icons/generic/ruoli.png');        mask-image: url('../icons/generic/ruoli.png'); }
+.tab-icon-settings { -webkit-mask-image: url('../icons/generic/impostazioni.png'); mask-image: url('../icons/generic/impostazioni.png'); }
+
 .tab-label {
   font-family: var(--font-display);
   font-size: 0.62rem;
@@ -112,6 +128,7 @@ body {
 
 /* Active state — accento + indicatore superiore */
 .tab-btn.active .tab-label { color: var(--gold); }
+.tab-btn.active .tab-icon { background-color: var(--gold); }
 .tab-btn.active::before {
   content: '';
   position: absolute;

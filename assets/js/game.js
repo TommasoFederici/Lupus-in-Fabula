@@ -4,7 +4,7 @@ import {
   ref, onValue, get, update, push, runTransaction
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { ROLES, checkWinConditions, playerEsceNotte, calcSpettroProb, countWolves } from "./engine/roles.js";
-import { ROLE_DATA } from "./engine/roleData.js";
+import { ROLE_DATA, roleIconHtml } from "./engine/roleData.js";
 import { processaNotte } from "./engine/nightEngine.js";
 import { formatLogEntry } from "./engine/eventLog.js";
 import * as ui from "./ui.js";
@@ -26,22 +26,19 @@ let lastSkipFirst   = false;
 let wizardRuoli     = [];
 
 const ROLE_EMOJI = {
-  "Lupo": "🐺", "Sciamano": "🔮", "Figlio del Lupo": "🌕",
+  "Lupo": "🐺", "Lupo Sciamano": "🔮", "Figlio del Lupo": "🌕",
   "Contadino": "🌾", "Veggente": "🔭", "Puttana": "🏠",
   "Investigatore": "🕵️", "Muto": "🤐", "Prete": "✝️",
   "Kamikaze": "💥", "Amante": "💘", "Mitomane": "🎭",
-  "Folle": "🃏", "Corvo": "🐦‍⬛",
-  "Miss Purple": "💜", "Ammaestratore": "🦁", "Boia": "🪓",
-  "Indemoniato": "😈", "Illusionista": "🪄", "Bugiardo": "🤥",
-  "Lupo Ciccione": "🍔", "Lupo Cieco": "🙈", "Lupo Mannaro": "🌕",
-  "Genio": "🧞‍♂️", "Medium": "🕯️", "Angelo": "😇",
-  "Giustiziere": "⚔️", "Massone": "🧱", "Mutaforma": "👽",
-  "Simbionte": "🧬", "Parassita": "🦠", "Mucca Mannara": "🐮",
+  "Matto": "🃏",
+  "Ammaestratore": "🦁", "Boia": "🪓",
+  "Indemoniato": "😈", "Stopper": "🪄", "Lupo Bugiardo": "🤥",
+  "Medium": "🕯️", "Angelo": "😇",
+  "Cacciatore": "⚔️", "Mucca Mannara": "🐮",
   "Spettro del Villaggio": "👻"
 };
 const FACTION_COLOR = {
-  lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0",
-  mannari: "#d4884a", alieni: "#44c4c4", parassita: "#88cc44", solitari: "#cc8844"
+  lupi: "#e05060", villaggio: "#40c0c0", neutrale: "#a080e0", solitari: "#cc8844"
 };
 
 // ── Spettro del Villaggio (player view) ────────────────────────────────────
@@ -107,10 +104,10 @@ function setupPlayer() {
   function showRole() {
     const nome  = isSpettroPlayer ? "Spettro del Villaggio" : (currentPlayerData.gameRole ?? "???");
     const dati  = ROLE_DATA[nome];
-    const emoji = ROLE_EMOJI[nome] ?? "";
+    const icona = roleIconHtml(nome, ROLE_EMOJI[nome] ?? "");
     const desc  = dati?.descrizioneLunga ?? dati?.descrizione ?? "";
     roleCardBack.innerHTML = `
-      <div class="role-reveal-name">${emoji} ${nome}</div>
+      <div class="role-reveal-name">${icona} ${nome}</div>
       ${desc ? `<div class="role-reveal-desc">${desc}</div>` : ""}`;
     roleCard.classList.add("revealed");
     toggleBtn.classList.add("holding");
@@ -317,10 +314,7 @@ function setupNarrator() {
 const WIN_LABELS = {
   lupi:      "Vince il Branco 🐺",
   villaggio: "Vince il Villaggio 🌾",
-  mannari:   "Vincono i Mannari 🐂",
   solitari:  "Vince il Matto 🃏",
-  alieni:    "Vincono gli Alieni 👽",
-  parassita: "Vince il Parassita 🦠",
 };
 
 function renderNarratorView(gameData) {
@@ -382,7 +376,7 @@ function renderSecretDashboard(gameData) {
 
   const rows = nonHost.map(([uid, p]) => {
     const ruolo   = p.gameRole ?? "???";
-    const emoji   = ROLE_EMOJI[ruolo] ?? "•";
+    const emoji   = roleIconHtml(ruolo, ROLE_EMOJI[ruolo] ?? "•");
     const plugin  = Object.values(ROLES).find(r => r.nome === ruolo);
     const fazione = plugin?.fazione ?? "villaggio";
     const fColor  = FACTION_COLOR[fazione] ?? "#e0a830";
@@ -451,7 +445,7 @@ function renderNightDashboard(gameData, skipFirst) {
   const ruolo         = wizardRuoli[wizardStep];
   const total         = wizardRuoli.length;
   const roleColor     = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
-  const emoji         = ROLE_EMOJI[ruolo.nome] ?? "•";
+  const emoji         = roleIconHtml(ruolo.nome, ROLE_EMOJI[ruolo.nome] ?? "•");
   const allPlayersWithRole = ruolo.getWizardPlayers
     ? ruolo.getWizardPlayers(stato, players)
     : Object.entries(players).filter(([, p]) => p.gameRole === ruolo.nome && p.role !== "host");
@@ -632,7 +626,7 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
 
   // ── Riga azione per ogni ruolo ────────────────────────────────────────────
   const actionRows = ruoliNotte.map(ruolo => {
-    const emoji = ROLE_EMOJI[ruolo.nome] ?? "•";
+    const emoji = roleIconHtml(ruolo.nome, ROLE_EMOJI[ruolo.nome] ?? "•");
     const color = FACTION_COLOR[ruolo.fazione] ?? "#e0a830";
     const controlli = ruolo.controlliNotte(Object.fromEntries(activePlayers), azioni, stato);
     let azioneText = "–";
@@ -955,30 +949,20 @@ function getTempFeedbackResult(ruolo, ctrl, tempFeedback, players) {
     ? { text: `${n(uid)} è uscito`,       tipo: "warning", icon: "🚶" }
     : { text: `${n(uid)} è restato`,      tipo: "ok",      icon: "🏠" };
 
-  if (["Veggente","Mutaforma"].includes(ruolo.nome) && (ctrl.chiaveAzione === "investigated" || ctrl.chiaveAzione === "mutaformaSubTarget") && fb.risultato)
+  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated" && fb.risultato)
     return investigaResult(fb.targetUid, fb.risultato);
-  if (["Investigatore","Mutaforma"].includes(ruolo.nome) && (ctrl.chiaveAzione === "watched" || ctrl.chiaveAzione === "mutaformaSubTarget") && fb.risultato)
+  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched" && fb.risultato)
     return spiaNotte(fb.targetUid, fb.risultato);
-  if (["Medium","Mutaforma"].includes(ruolo.nome) && (ctrl.chiaveAzione === "mediumTarget" || ctrl.chiaveAzione === "mutaformaSubTarget") && fb.fazione)
+  if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget" && fb.fazione)
     return { text: `${n(fb.targetUid)}: fazione ${fb.fazione}`, tipo: "info", icon: "🕯️" };
-  if (["Mitomane","Simbionte","Genio"].includes(ruolo.nome) && fb.roleName)
+  if (ruolo.nome === "Mitomane" && fb.roleName)
     return { text: `Ruolo: ${fb.roleName}`, tipo: "info", icon: "🎭" };
-  if (ruolo.nome === "Lupo Cieco" && fb.risultato)
-    return fb.risultato === "si"
-      ? { text: "Lupo nel trio rilevato",    tipo: "danger",  icon: "🐺" }
-      : { text: "Nessun lupo nel trio",      tipo: "ok",      icon: "✅" };
   if (ruolo.nome === "Boia" && fb.risultato)
     return fb.risultato === "ok"
       ? { text: `${n(fb.targetUid)} → ✅ Indovinato`,  tipo: "danger",  icon: "🪓" }
       : { text: `Sbagliato — il Boia muore`, tipo: "warning", icon: "🪓" };
-  if (ruolo.nome === "Bugiardo" && fb.ruoloScoperto)
+  if (ruolo.nome === "Lupo Bugiardo" && fb.ruoloScoperto)
     return { text: `${n(fb.targetUid)} era: ${fb.ruoloScoperto}`, tipo: "info", icon: "🤥" };
-  if (ruolo.nome === "Miss Purple" && fb.conteggio !== undefined)
-    return { text: `${fb.conteggio} lupo/i in gioco`, tipo: fb.conteggio > 0 ? "danger" : "ok", icon: "💜" };
-  if (ruolo.nome === "Lupo Mannaro" && fb.risultato)
-    return fb.risultato === "ok"
-      ? { text: `${n(fb.targetUid)} → ✅ Caccia riuscita`, tipo: "danger", icon: "🌕" }
-      : { text: `Ruolo sbagliato — caccia fallita`,        tipo: "info",   icon: "🌕" };
   return null;
 }
 
@@ -987,27 +971,14 @@ function buildTempFeedbackPayload(ruolo, ctrl, singleValue, result) {
     return { targetUid: singleValue, risultato: result.tipo === "danger" ? "lupo" : "innocente" };
   if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched")
     return { targetUid: singleValue, risultato: result.tipo === "warning" ? "esce" : "resta" };
-  if (["Mitomane","Simbionte","Genio"].includes(ruolo.nome))
+  if (ruolo.nome === "Mitomane")
     return { roleName: singleValue };
   if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget")
     return { targetUid: singleValue, fazione: result.fazione };
-  if (ruolo.nome === "Lupo Cieco" && ctrl.chiaveAzione === "ciecoTarget")
-    return { risultato: result.tipo === "danger" ? "si" : "no" };
   if (ruolo.nome === "Boia" && ctrl.chiaveAzione === "boiaTarget")
     return { targetUid: singleValue, risultato: result.tipo === "danger" ? "ok" : "fail" };
-  if (ruolo.nome === "Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget")
+  if (ruolo.nome === "Lupo Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget")
     return { targetUid: singleValue, ruoloScoperto: result.ruoloScoperto };
-  if (ruolo.nome === "Miss Purple")
-    return { conteggio: result.conteggio };
-  if (ruolo.nome === "Lupo Mannaro" && ctrl.chiaveAzione === "mannaro_target")
-    return { targetUid: singleValue, risultato: result.tipo === "danger" ? "ok" : "fail" };
-  if (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget") {
-    if (result.tipo === "danger" || result.tipo === "ok") {
-      if (result.icon === "🐺" || result.icon === "✅") return { targetUid: singleValue, risultato: result.tipo === "danger" ? "lupo" : "innocente" };
-      if (result.icon === "🚶" || result.icon === "🏠") return { targetUid: singleValue, risultato: result.tipo === "warning" ? "esce" : "resta" };
-    }
-    if (result.fazione) return { targetUid: singleValue, fazione: result.fazione };
-  }
   return null;
 }
 
@@ -1016,9 +987,8 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
   if (!newValue) return null;
   const target = players[newValue];
 
-  // Veggente / Mutaforma-come-Veggente
-  if ((ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") ||
-      (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget" && players[azioni.mutaformaTarget]?.gameRole === "Veggente")) {
+  // Veggente
+  if (ruolo.nome === "Veggente" && ctrl.chiaveAzione === "investigated") {
     if (!target) return null;
     const isSciamano = azioni["sciamanoTarget"] === newValue;
     const roleObj    = Object.values(ROLES).find(r => r.nome === target.gameRole);
@@ -1029,41 +999,21 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
       : { text: `${ui.escapeHtml(target.name)} è Innocente`, tipo: "ok",     icon: "✅" };
   }
 
-  // Investigatore / Mutaforma-come-Investigatore
-  if ((ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") ||
-      (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget" && players[azioni.mutaformaTarget]?.gameRole === "Investigatore")) {
+  // Investigatore
+  if (ruolo.nome === "Investigatore" && ctrl.chiaveAzione === "watched") {
     if (!target) return null;
-    const esce = playerEsceNotte(newValue, target, { saved: azioni["saved"] ?? null, lovers: azioni["lovers"] ?? {} }, stato ?? {});
+    const esce = playerEsceNotte(newValue, target, { saved: azioni["saved"] ?? null, amanteCasa: azioni["amanteCasa"] ?? null }, stato ?? {});
     return esce
       ? { text: `${ui.escapeHtml(target.name)} è uscito di casa`,   tipo: "warning", icon: "🚶" }
       : { text: `${ui.escapeHtml(target.name)} è rimasto in casa`,  tipo: "ok",      icon: "🏠" };
   }
 
-  // Medium / Mutaforma-come-Medium
-  if ((ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget") ||
-      (ruolo.nome === "Mutaforma" && ctrl.chiaveAzione === "mutaformaSubTarget" && players[azioni.mutaformaTarget]?.gameRole === "Medium")) {
+  // Medium
+  if (ruolo.nome === "Medium" && ctrl.chiaveAzione === "mediumTarget") {
     if (!target) return null;
     const roleObj = Object.values(ROLES).find(r => r.nome === target.gameRole);
     const fazione = roleObj?.fazione ?? "villaggio";
     return { text: `${ui.escapeHtml(target.name)}: fazione ${fazione}`, tipo: "info", icon: "🕯️", fazione };
-  }
-
-  // Lupo Cieco — il trio viene calcolato approssimativamente lato client
-  if (ruolo.nome === "Lupo Cieco" && ctrl.chiaveAzione === "ciecoTarget") {
-    const viviUids = Object.entries(players).filter(([, p]) => p.isAlive && p.role !== "host").map(([u]) => u);
-    const idx = viviUids.indexOf(newValue);
-    const trio = [
-      viviUids[(idx - 1 + viviUids.length) % viviUids.length],
-      newValue,
-      viviUids[(idx + 1) % viviUids.length]
-    ].filter((u, i, a) => a.indexOf(u) === i);
-    const hasLupo = trio.some(u => {
-      const r = Object.values(ROLES).find(rr => rr.nome === players[u]?.gameRole);
-      return (r?.fazioneApparente ?? r?.fazione) === "lupi";
-    });
-    return hasLupo
-      ? { text: "Lupo nel trio rilevato",  tipo: "danger", icon: "🙈" }
-      : { text: "Nessun lupo nel trio",    tipo: "ok",     icon: "🙈" };
   }
 
   // Boia (feedback su boiaTarget dopo aver selezionato anche boiaRole)
@@ -1075,23 +1025,14 @@ function computeNightResultForValue(ruolo, ctrl, newValue, players, azioni, stat
       : { text: `Sbagliato — il Boia muore`,          tipo: "warning", icon: "🪓" };
   }
 
-  // Bugiardo
-  if (ruolo.nome === "Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget") {
+  // Lupo Bugiardo
+  if (ruolo.nome === "Lupo Bugiardo" && ctrl.chiaveAzione === "bugiardoTarget") {
     if (!target) return null;
     return { text: `${ui.escapeHtml(target.name)} era: ${target.gameRole}`, tipo: "info", icon: "🤥", ruoloScoperto: target.gameRole };
   }
 
-  // Lupo Mannaro (feedback su mannaro_target dopo aver selezionato mannaro_role)
-  if (ruolo.nome === "Lupo Mannaro" && ctrl.chiaveAzione === "mannaro_target") {
-    if (!target || !azioni.mannaro_role) return null;
-    const corretto = target.gameRole === azioni.mannaro_role;
-    return corretto
-      ? { text: `${ui.escapeHtml(target.name)} → ✅ Caccia riuscita`, tipo: "danger",  icon: "🌕" }
-      : { text: `Ruolo sbagliato — caccia fallita`,     tipo: "info",    icon: "🌕" };
-  }
-
-  // Mitomane / Simbionte / Genio (select-ruolo)
-  if (["Mitomane","Simbionte","Genio"].includes(ruolo.nome) && ctrl.tipo === "select-ruolo")
+  // Mitomane (select-ruolo)
+  if (ruolo.nome === "Mitomane" && ctrl.tipo === "select-ruolo")
     return { text: `Ruolo: ${newValue}`, tipo: "info", icon: "🎭" };
 
   return null;
@@ -1200,11 +1141,9 @@ function renderVoting(gameData) {
   container.innerHTML = "";
 
   const players    = gameData.players    ?? {};
-  const rolesDB    = gameData.roles      ?? {};
   const stato      = gameData.state      ?? {};
   const dayActions = gameData.dayActions ?? {};
   const votes      = dayActions.votes    ?? {};
-  const corvoTarget  = dayActions.corvoTarget ?? null;
   const spettroBoost = stato.spettroBoost ?? null; // uid del giocatore con voto doppio oggi
 
   const alivePlayers = Object.entries(players)
@@ -1215,12 +1154,10 @@ function renderVoting(gameData) {
     return;
   }
 
-  const hasCorvo = (rolesDB["Corvo"]?.count ?? 0) > 0;
-
   // Calcola totali (il narratore inserisce manualmente il doppio voto dello spettro)
   const totali = {};
   for (const [uid] of alivePlayers) {
-    totali[uid] = (votes[uid] ?? 0) + (hasCorvo && corvoTarget === uid ? 1 : 0);
+    totali[uid] = votes[uid] ?? 0;
   }
   const condannato = getCondannato(totali);
 
@@ -1250,9 +1187,8 @@ function renderVoting(gameData) {
 
     const voteCount = document.createElement("span");
     voteCount.className = "vote-count";
-    const base       = votes[uid] ?? 0;
-    const bonusCorvo = hasCorvo && corvoTarget === uid ? 1 : 0;
-    voteCount.textContent = bonusCorvo ? `${base + bonusCorvo} (${base}+1🪶)` : `${base}`;
+    const base = votes[uid] ?? 0;
+    voteCount.textContent = `${base}`;
 
     const minus = document.createElement("button");
     minus.className = "quick-btn btn-vote-minus";
@@ -1270,21 +1206,6 @@ function renderVoting(gameData) {
     });
 
     row.append(info, minus, voteCount, plus);
-
-    // Voto Corvo
-    if (hasCorvo) {
-      const corvoLabel = document.createElement("label");
-      corvoLabel.className = "corvo-label";
-      const corvoChk = document.createElement("input");
-      corvoChk.type    = "radio";
-      corvoChk.name    = "corvoTarget";
-      corvoChk.checked = corvoTarget === uid;
-      corvoChk.addEventListener("change", async () => {
-        await update(ref(db, `games/${gameCode}/dayActions`), { corvoTarget: uid });
-      });
-      corvoLabel.append(corvoChk, " 🪶");
-      row.appendChild(corvoLabel);
-    }
 
     container.appendChild(row);
   });
@@ -1305,7 +1226,7 @@ function renderVoting(gameData) {
   resetBtn.className = "quick-btn btn-reset-votes";
   resetBtn.textContent = "Azzera voti";
   resetBtn.addEventListener("click", async () => {
-    await update(ref(db, `games/${gameCode}/dayActions`), { votes: null, corvoTarget: null });
+    await update(ref(db, `games/${gameCode}/dayActions`), { votes: null });
   });
   container.appendChild(resetBtn);
 }
@@ -1352,17 +1273,17 @@ async function handleMandaAlRogo(uid, players) {
     }
   }
 
-  // Effetti passivi (Kamikaze, Folle...)
+  // Effetti passivi (Kamikaze, Matto...)
   const votanti = await pickKamikazeVotanti(uid, players[uid], players);
   await handlePassiveEffects({ tipo: "morte_giorno", uid, votanti }, players);
 
   // Check win conditions dopo ogni morte di giorno.
-  // Il Folle vince istantaneamente se giustiziato — va calcolato PRIMA di
+  // Il Matto vince istantaneamente se giustiziato — va calcolato PRIMA di
   // checkWinConditions() (che non gestisce la fazione "solitari") e scritto
   // su state/winner come ogni altro esito, così l'overlay persiste al refresh
   // invece di sparire (bug precedente: era solo un overlay locale mai salvato).
   const playersAggiornati = { ...players, [uid]: { ...players[uid], isAlive: false } };
-  const vincitore = players[uid]?.gameRole === "Folle"
+  const vincitore = players[uid]?.gameRole === "Matto"
     ? "solitari"
     : checkWinConditions(playersAggiornati, lastGameData?.state ?? {});
   if (vincitore) {
@@ -1373,7 +1294,7 @@ async function handleMandaAlRogo(uid, players) {
   }
 
   // Azzera voti
-  await update(ref(db, `games/${gameCode}/dayActions`), { votes: null, corvoTarget: null });
+  await update(ref(db, `games/${gameCode}/dayActions`), { votes: null });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1438,7 +1359,7 @@ async function handlePhaseToggle() {
       if (players[uid].isMuted) muteReset[`games/${gameCode}/players/${uid}/isMuted`] = false;
     }
     if (Object.keys(muteReset).length) await update(ref(db), muteReset);
-    await update(ref(db, `games/${gameCode}/dayActions`), { votes: null, corvoTarget: null });
+    await update(ref(db, `games/${gameCode}/dayActions`), { votes: null });
   }
 
   const newPhase = phase === "night" ? "day" : "night";
@@ -1484,7 +1405,6 @@ const LOG_TIPO_COLOR = {
   attacco_lupo:                   "#c84050",
   boia_esecuzione:                "#c84050",
   giustiziere_esecuzione:         "#d05060",
-  mannaro_caccia:                 "#d4884a",
   morte_giorno:                   "#e07030",
   kamikaze_vendetta:              "#e0a030",
   amante_muore:                   "#d060a0",
@@ -1495,14 +1415,11 @@ const LOG_TIPO_COLOR = {
   veggente_risposta:              "#4080e0",
   investigatore_risposta:         "#4080e0",
   medium_risposta:                "#7070c0",
-  missPurple_risposta:            "#a060c0",
-  lupoCieco_risposta:             "#c04060",
   bugiardo_risposta:              "#c06080",
-  sciamano_maledizione:           "#8060c0",
+  sciamano_insinuo:               "#8060c0",
   muto_silenzia:                  "#806080",
-  parassita_infetta:              "#88cc44",
   folle_vince:                    "#a0c040",
-  bloccato_da_illusionista:       "#6080a0",
+  bloccato_da_stopper:            "#6080a0",
 };
 
 function _inferPhase(e) {
@@ -1573,7 +1490,7 @@ function renderEventLog(log, giocatori) {
 }
 
 // ── Vittoria overlay ──────────────────────────────────────────────────────────
-// undoFn: funzione opzionale per ripristino extra (es. revive Folle).
+// undoFn: funzione opzionale per ripristino extra (es. revive Matto).
 // Entrambi i bottoni sono sempre presenti.
 function triggerWin(label, undoFn) {
   if (document.getElementById("win-overlay")) return; // già mostrato

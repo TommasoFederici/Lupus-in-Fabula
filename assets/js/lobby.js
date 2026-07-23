@@ -4,7 +4,7 @@ import {
   ref, onValue, set, update, get, remove
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 import { ROLES } from "./engine/roles.js";
-import { ROLE_DATA, CATEGORIES } from "./engine/roleData.js";
+import { ROLE_DATA, CATEGORIES, roleIconHtml } from "./engine/roleData.js";
 import * as ui from "./ui.js";
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -39,7 +39,7 @@ function openRoleWiki(roleName) {
   if (!data) return;
   const cat = CATEGORIES.find(c => c.id === data.categoria);
 
-  document.getElementById("wiki-emoji").textContent     = data.emoji;
+  document.getElementById("wiki-emoji").innerHTML       = roleIconHtml(roleName, data.emoji);
   document.getElementById("wiki-role-name").textContent = roleName;
 
   const badge = document.getElementById("wiki-faction-badge");
@@ -52,7 +52,7 @@ function openRoleWiki(roleName) {
   body.innerHTML = "";
 
   // ── Card: Informazioni Fazione
-  const factionNames = { lupi: "Lupi", villaggio: "Villaggio", neutrale: "Neutrale" };
+  const factionNames = { lupi: "Lupi", villaggio: "Villaggio", neutrale: "Neutrale", solitari: "Solitari" };
   const factionCard = _card(
     `<h3 class="wiki-card-title">ℹ️ Informazioni Fazione</h3>
      <div class="wiki-info-grid">
@@ -362,7 +362,7 @@ function loadRoles(dbRoles) {
 
       const emoji = document.createElement("span");
       emoji.className = "role-row-emoji";
-      emoji.textContent = wikiData?.emoji ?? "•";
+      emoji.innerHTML = roleIconHtml(ruolo.nome, wikiData?.emoji ?? "•");
 
       const name = document.createElement("span");
       name.className = "role-row-name";
