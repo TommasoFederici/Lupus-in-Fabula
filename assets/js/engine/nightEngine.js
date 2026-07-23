@@ -100,6 +100,24 @@ export async function processaNotte(gameCode) {
       sl[uid].isAlive = false;
       sl[uid]._morteNottePending = false;
       mortiNotte.push(uid);
+    }
+  }
+
+  // Evita una riga di log generica "muore nella notte" quando la morte è già
+  // raccontata da un evento con causa specifica (attacco lupi andato a segno,
+  // esecuzione del Boia, esecuzione del Cacciatore) — altrimenti ogni morte
+  // finiva loggata due volte con motivazioni ridondanti.
+  const causaGiaRaccontata = new Set();
+  for (const e of tuttiLog) {
+    if (e.tipo === "attacco_lupo") {
+      e.esito = mortiNotte.includes(e.vittima) ? "muore" : "sopravvive";
+      if (e.esito === "muore") causaGiaRaccontata.add(e.vittima);
+    }
+    if (e.tipo === "boia_esecuzione")        causaGiaRaccontata.add(e.morto);
+    if (e.tipo === "giustiziere_esecuzione")  causaGiaRaccontata.add(e.bersaglio);
+  }
+  for (const uid of mortiNotte) {
+    if (!causaGiaRaccontata.has(uid)) {
       tuttiLog.push({ tipo: "morte_notte", uid, notte: stato.nightNumber, timestamp: Date.now() });
     }
   }
@@ -226,14 +244,8 @@ function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
   if (figlio) righe.push({ testo: `🌕 ${nome(figlio.uid)} si è trasformato in Lupo!`, tipo: "trasforma" });
 
   eventi.filter(e => e.tipo === "amante_muore").forEach(e =>
-    righe.push({ testo: `💔 ${nome(e.uid)} muore (amante di ${nome(e.perColpaDi)})`, tipo: "morte" })
+    righe.push({ testo: `💔 ${nome(e.uid)} muore: era nella casa di ${nome(e.perColpaDi)}, bersaglio dei lupi stanotte`, tipo: "morte" })
   );
-
-  const veg = eventi.find(e => e.tipo === "veggente_risposta");
-  if (veg) righe.push({
-    testo: `🔭 Veggente → ${nome(veg.bersaglio)}: ${veg.risultato === "lupo" ? "LUPO 🐺" : "Innocente ✅"}`,
-    tipo: "info"
-  });
 
   const inv = eventi.find(e => e.tipo === "investigatore_risposta");
   if (inv) righe.push({
@@ -245,7 +257,7 @@ function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
   if (med) righe.push({ testo: `🕯️ Medium → ${nome(med.bersaglio)}: fazione ${med.fazione}`, tipo: "info" });
 
   const boia = eventi.find(e => e.tipo === "boia_esecuzione");
-  if (boia) righe.push({ testo: `🪓 Boia → ${nome(boia.bersaglio)} (${boia.ruoloDichiarato}): ${boia.indovinato ? "✅ Corretto" : "❌ Sbagliato"}`, tipo: boia.indovinato ? "morte" : "info" });
+  if (boia) righe.push({ testo: `🪓 Boia → ${nome(boia.bersaglio)} (${boia.ruoloDichiarato}): ${boia.indovinato ? "✅ Corretto" : "❌ Sbagliato"} — muore ${nome(boia.morto)}`, tipo: "morte" });
 
   const bug = eventi.find(e => e.tipo === "bugiardo_risposta");
   if (bug) righe.push({ testo: `🤥 Lupo Bugiardo → ${nome(bug.bersaglio)}: era ${bug.ruoloScoperto}`, tipo: "info" });

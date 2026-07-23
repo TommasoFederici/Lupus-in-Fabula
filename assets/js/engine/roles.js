@@ -211,7 +211,7 @@ export const ROLES = {
         aggiornamenti: agg,
         logEventi: [{
           tipo: "boia_esecuzione", bersaglio: targetUid, ruoloDichiarato: roleDich,
-          indovinato, notte: stato.nightNumber, timestamp: Date.now()
+          indovinato, morto, notte: stato.nightNumber, timestamp: Date.now()
         }]
       };
     },

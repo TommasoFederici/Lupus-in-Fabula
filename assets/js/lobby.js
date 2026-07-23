@@ -389,12 +389,10 @@ function loadRoles(dbRoles) {
         const controls = document.createElement("div");
         controls.className = "role-row-controls";
 
-        const step = ruolo.pairOnly ? 2 : 1;
-
         const minus = document.createElement("button");
         minus.textContent = "−";
         minus.className = "btn-count";
-        minus.addEventListener("click", () => updateRole(ruolo.nome, -step));
+        minus.addEventListener("click", () => updateRole(ruolo.nome, -1, ruolo.pairOnly));
 
         const countEl = document.createElement("span");
         countEl.id = `role-count-${ruolo.nome}`;
@@ -404,7 +402,7 @@ function loadRoles(dbRoles) {
         const plus = document.createElement("button");
         plus.textContent = "+";
         plus.className = "btn-count";
-        plus.addEventListener("click", () => updateRole(ruolo.nome, +step));
+        plus.addEventListener("click", () => updateRole(ruolo.nome, +1, ruolo.pairOnly));
 
         controls.append(minus, countEl, plus);
         bottom.appendChild(controls);
@@ -424,9 +422,19 @@ function loadRoles(dbRoles) {
   updateRolesCounter();
 }
 
-function updateRole(roleName, delta) {
+// pairOnly (es. Amanti): servono almeno 2, ma da lì in poi anche numeri
+// dispari (es. un trio) — quindi si salta da 0 a 2 e da 2 a 0, altrimenti
+// step di 1 come tutti gli altri ruoli.
+function updateRole(roleName, delta, pairOnly) {
   const el = document.getElementById(`role-count-${roleName}`);
-  let newCount = parseInt(el.textContent) + delta;
+  const current = parseInt(el.textContent);
+  let newCount;
+  if (pairOnly) {
+    if (delta > 0) newCount = current === 0 ? 2 : current + 1;
+    else           newCount = current <= 2 ? 0 : current - 1;
+  } else {
+    newCount = current + delta;
+  }
   if (newCount < 0) newCount = 0;
   el.textContent = newCount;
   update(ref(db, `games/${gameCode}/roles/${roleName}`), { count: newCount });

@@ -688,8 +688,8 @@ function renderNightRecap(container, gameData, activePlayers, players, azioni, t
       </div>
     </div>
     <div class="recap-nav">
-      <button class="wiz-btn wiz-btn-back" id="recap-back-btn">← Torna al wizard</button>
-      <button class="wiz-btn wiz-btn-alba" id="recap-alba-btn">☀️ Vai all'Alba</button>
+      <button class="wiz-btn wiz-btn-back" id="recap-back-btn">← Torna indietro</button>
+      <button class="wiz-btn wiz-btn-alba" id="recap-alba-btn">☀️ È giorno</button>
     </div>`;
 
   container.appendChild(wrap);
@@ -1417,6 +1417,12 @@ const LOG_TIPO_COLOR = {
   muto_silenzia:                  "#806080",
   folle_vince:                    "#a0c040",
   bloccato_da_stopper:            "#6080a0",
+  stopper_blocca:                 "#6080a0",
+  ammaestratore_reindirizza:      "#c09040",
+  puttana_salva:                  "#40b880",
+  spettro_assegnato:              "#8070b0",
+  spettro_boost:                  "#8070b0",
+  spettro_no_boost:               "#8070b0",
 };
 
 function _inferPhase(e) {

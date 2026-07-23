@@ -24,7 +24,7 @@ export function formatLogEntry(e, giocatori = {}) {
   const nome = (uid) => escapeHtml(giocatori[uid]?.name ?? uid);
 
   switch (e.tipo) {
-    case "attacco_lupo":                    return `🐺 I Lupi attaccano ${nome(e.vittima)}`;
+    case "attacco_lupo":                    return `🐺 I Lupi attaccano ${nome(e.vittima)}${e.esito === "muore" ? " — muore" : e.esito === "sopravvive" ? " — sopravvive" : ""}`;
     case "morte_notte":                     return `💀 ${nome(e.uid)} muore nella notte`;
     case "morte_giorno":                    return `🔥 ${nome(e.uid)} eliminato al rogo`;
     case "puttana_salva":                   return `🏠 La Puttana ospita ${nome(e.bersaglio)}`;
@@ -33,14 +33,16 @@ export function formatLogEntry(e, giocatori = {}) {
     case "investigatore_risposta":          return `🕵️ Investigatore su ${nome(e.bersaglio)}: ${e.risultato === "esce" ? "Esce di notte 🚶" : "Resta a casa 🏠"}`;
     case "medium_risposta":                 return `🕯️ Medium su ${nome(e.bersaglio)}: fazione ${e.fazione}`;
     case "bugiardo_risposta":               return `🤥 Lupo Bugiardo su ${nome(e.bersaglio)}: era ${e.ruoloScoperto}`;
-    case "boia_esecuzione":                 return `🪓 Boia → ${nome(e.bersaglio)} (${e.ruoloDichiarato}): ${e.indovinato ? "✅ Corretto" : "❌ Sbagliato"}`;
+    case "boia_esecuzione":                 return `🪓 Boia dichiara "${e.ruoloDichiarato}" su ${nome(e.bersaglio)}: ${e.indovinato ? "✅ Corretto" : "❌ Sbagliato"} — muore ${nome(e.morto)}`;
     case "angelo_resurrezione":             return `😇 Angelo resuscita ${nome(e.bersaglio)}`;
-    case "giustiziere_esecuzione":          return `⚔️ Cacciatore giustizia ${nome(e.bersaglio)}`;
+    case "giustiziere_esecuzione":          return `⚔️ Cacciatore giustizia ${nome(e.bersaglio)}, che muore`;
     case "muto_silenzia":                   return `🤐 ${nome(e.bersaglio)} viene silenziato`;
     case "sciamano_insinuo":                return `🔮 Lupo Sciamano insinua su ${nome(e.bersaglio)}`;
+    case "stopper_blocca":                  return `🪄 Stopper blocca ${nome(e.bersaglio)}`;
+    case "ammaestratore_reindirizza":       return `🦁 Ammaestratore reindirizza l'attacco su ${nome(e.nuovoBersaglio)}${e.fallisce ? " (fallisce: bersaglio è un lupo)" : ""}`;
     case "mitomane_copia":                  return `🎭 Mitomane diventa ${e.nuovoRuolo}`;
     case "figlio_diventa_lupo":             return `🌕 ${nome(e.uid)} (Figlio del Lupo) si trasforma in Lupo!`;
-    case "amante_muore":                    return `💔 ${nome(e.uid)} muore di crepacuore (amante di ${nome(e.perColpaDi)})`;
+    case "amante_muore":                    return `💔 ${nome(e.uid)} muore: era nella casa di ${nome(e.perColpaDi)}, bersaglio dei lupi stanotte`;
     case "kamikaze_vendetta":               return `💥 Kamikaze ${nome(e.kamikaze)} porta con sé ${nome(e.morto)}`;
     case "folle_vince":                     return `🃏 ${nome(e.uid)} era il Matto e ha vinto!`;
     case "bloccato_da_stopper":             return `🪄 Stopper blocca: ${e.ruolo}`;
