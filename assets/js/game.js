@@ -98,7 +98,6 @@ function setupPlayer() {
 
   const roleCard     = document.getElementById("role-card");
   const roleCardBack = document.getElementById("role-card-back");
-  const toggleBtn    = document.getElementById("toggle-card");
   const statusEl     = document.getElementById("player-status");
 
   function showRole() {
@@ -110,22 +109,20 @@ function setupPlayer() {
       <div class="role-reveal-name">${icona} ${nome}</div>
       ${desc ? `<div class="role-reveal-desc">${desc}</div>` : ""}`;
     roleCard.classList.add("revealed");
-    toggleBtn.classList.add("holding");
   }
   function hideRole() {
     roleCard.classList.remove("revealed");
-    toggleBtn.classList.remove("holding");
   }
 
-  toggleBtn.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    showRole();
+  roleCard.addEventListener("click", () => {
+    roleCard.classList.contains("revealed") ? hideRole() : showRole();
   });
-  toggleBtn.addEventListener("pointerup",     hideRole);
-  toggleBtn.addEventListener("pointerleave",  hideRole);
-  toggleBtn.addEventListener("pointercancel", hideRole);
-  // Blocca il menu contestuale su mobile (long-press)
-  toggleBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+  roleCard.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      roleCard.classList.contains("revealed") ? hideRole() : showRole();
+    }
+  });
 
   // ── Wiki
   document.getElementById("show-wiki-btn").addEventListener("click", () => {

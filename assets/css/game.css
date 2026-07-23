@@ -96,16 +96,6 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
   color: var(--text-muted);
   margin: 0 0 0.8rem;
 }
-.player-navbar {
-  flex-shrink: 0;
-  padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
-  background: var(--bg-raised);
-}
-.player-navbar button {
-  width: 100%;
-}
-
 .btn-wiki {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.15);
@@ -120,18 +110,6 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
 }
 .btn-wiki:hover { background: rgba(255,255,255,0.11); }
 
-#toggle-card {
-  background: var(--info-deep);
-  color: var(--parchment);
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-#toggle-card.holding {
-  background: color-mix(in srgb, var(--info-deep) 75%, black);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 40%, transparent);
-  transform: scale(0.97);
-}
 .btn-phase {
   background: var(--gold);
   color: var(--bg-deep);
@@ -147,6 +125,9 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
   margin: 1rem auto;
   max-height: 100%;
   perspective: 1200px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .flip-card-inner {
   display: grid;
