@@ -22,6 +22,10 @@
   <main class="tab-content">
 
     <div id="tab-players" class="tab-panel active">
+      <div id="qr-join-section" style="display:none;">
+        <p class="qr-join-hint">📱 Inquadra per unirti</p>
+        <div id="qr-join-code"></div>
+      </div>
       <div id="players-list"></div>
       <div id="dev-section" style="display:none;">
         <button id="add-bot-btn">🤖 + Aggiungi Bot</button>
@@ -94,6 +98,7 @@
   <div id="ui-overlay"></div>
   <div id="ui-toast"></div>
 
+  <script src="assets/js/vendor/qrcode.min.js"></script>
   <script type="module" src="assets/js/lobby.js"></script>
 </body>
 </html>

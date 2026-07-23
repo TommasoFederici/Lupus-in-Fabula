@@ -124,6 +124,34 @@ body {
   border-radius: 0 0 3px 3px;
 }
 
+/* ── QR join ────────────────────────────────────────────────────────────────── */
+#qr-join-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 0.8rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius-md);
+}
+
+.qr-join-hint {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+#qr-join-code {
+  padding: 0.5rem;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  line-height: 0;
+}
+
 /* ── Player items ───────────────────────────────────────────────────────────── */
 #players-list {
   display: flex;

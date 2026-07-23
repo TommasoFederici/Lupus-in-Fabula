@@ -160,12 +160,13 @@ document.getElementById("join-game").addEventListener("click", async () => {
     placeholder: "Es. AB3XZ"
   });
   if (!rawCode) return;
+  await joinGame(rawCode.trim().toUpperCase());
+});
 
+async function joinGame(gameCode) {
   let user;
   try { user = await requireAuth(); }
   catch { await ui.alert("Accesso anonimo non riuscito. Ricarica la pagina.", { icon: "🔒" }); return; }
-
-  const gameCode = rawCode.trim().toUpperCase();
 
   let stateSnap, playersSnap;
   try {
@@ -227,7 +228,13 @@ document.getElementById("join-game").addEventListener("click", async () => {
     console.error(err);
     await ui.alert("Errore nell'unirsi alla partita.", { icon: "❌" });
   }
-});
+}
+
+// ── Auto-join da QR code (?join=<gameCode>) ──────────────────────────────────
+const autoJoinCode = new URLSearchParams(window.location.search).get("join");
+if (autoJoinCode) {
+  joinGame(autoJoinCode.trim().toUpperCase());
+}
 
 // ── Mostra partite salvate all'avvio ──────────────────────────────────────────
 renderActiveGames();

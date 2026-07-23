@@ -168,6 +168,7 @@ async function setupLobby() {
     if (devSection) devSection.style.display = (isHost && devMode) ? "block" : "none";
 
     renderRoleCounts(rolesDB);
+    renderJoinQr(isHost, state.status ?? "waiting");
 
     if (state.status === "running") {
       window.location.href = `game.html?gameCode=${gameCode}`;
@@ -239,6 +240,24 @@ async function setupLobby() {
   });
 
   document.getElementById("add-bot-btn")?.addEventListener("click", addBot);
+}
+
+// ── QR join ───────────────────────────────────────────────────────────────────
+let qrRendered = false;
+function renderJoinQr(isHost, status) {
+  const section = document.getElementById("qr-join-section");
+  if (!section) return;
+
+  const visible = isHost && status === "waiting";
+  section.style.display = visible ? "flex" : "none";
+  if (!visible || qrRendered) return;
+
+  qrRendered = true;
+  new QRCode(document.getElementById("qr-join-code"), {
+    text: `${location.origin}/index.html?join=${gameCode}`,
+    width: 160,
+    height: 160
+  });
 }
 
 // ── Players ───────────────────────────────────────────────────────────────────
