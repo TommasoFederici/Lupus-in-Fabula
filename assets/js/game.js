@@ -97,7 +97,8 @@ function setupPlayer() {
     const icona = roleIconHtml(nome, ROLE_DATA[nome]?.emoji ?? "");
     const desc  = dati?.descrizioneLunga ?? dati?.descrizione ?? "";
     roleCardBack.innerHTML = `
-      <div class="role-reveal-name">${icona} ${nome}</div>
+      <div class="role-reveal-icon">${icona}</div>
+      <div class="role-reveal-name">${nome}</div>
       ${desc ? `<div class="role-reveal-desc">${desc}</div>` : ""}`;
     roleCard.classList.add("revealed");
   }

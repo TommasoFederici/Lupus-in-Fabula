@@ -20,8 +20,22 @@
       <div id="role-card" class="flip-card" role="button" tabindex="0" aria-label="Tocca per vedere il ruolo">
         <div class="flip-card-inner">
           <div class="flip-card-front">
-            <span class="flip-card-front-icon">🎭</span>
-            <span>Tocca per vedere</span>
+            <svg class="flip-card-front-stars" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+              <defs>
+                <pattern id="frontStarsPattern" width="50" height="50" patternUnits="userSpaceOnUse">
+                  <path class="star-shape" transform="translate(9,9)"
+                        d="M6 0 C6.8 4 8 5.2 12 6 C8 6.8 6.8 8 6 12 C5.2 8 4 6.8 0 6 C4 5.2 5.2 4 6 0 Z" />
+                  <path class="star-shape star-shape--sm" transform="translate(33,27) scale(0.6)"
+                        d="M6 0 C6.8 4 8 5.2 12 6 C8 6.8 6.8 8 6 12 C5.2 8 4 6.8 0 6 C4 5.2 5.2 4 6 0 Z" />
+                  <path class="star-shape star-shape--xs" transform="translate(22,40) scale(0.4)"
+                        d="M6 0 C6.8 4 8 5.2 12 6 C8 6.8 6.8 8 6 12 C5.2 8 4 6.8 0 6 C4 5.2 5.2 4 6 0 Z" />
+                </pattern>
+              </defs>
+              <rect width="200" height="200" fill="url(#frontStarsPattern)" />
+            </svg>
+            <span class="flip-card-front-moon" aria-hidden="true"></span>
+            <span class="flip-card-front-question" aria-hidden="true">?</span>
+            <span class="flip-card-front-label">Tocca per vedere</span>
           </div>
           <div id="role-card-back" class="flip-card-back"></div>
         </div>
