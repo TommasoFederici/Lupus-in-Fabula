@@ -6,6 +6,8 @@
 //                                 (lo Stopper blocca i ruoli successivi se targeting)
 //   2. Salvataggio Puttana      — cancella _morteNottePending sul bersaglio ospitato
 //   3. Trasformazione Figlio    — Figlio del Lupo → Lupo invece di morire
+//   3.5 Seconda vita Druido     — se il bersaglio finale del morso è il Druido e non ha
+//                                 ancora perso la prima vita, l'attacco viene annullato
 //   4. Applicazione morti
 //   5. Catena Amanti            — se i lupi colpiscono la casa comune, muoiono tutti gli amanti lì
 //   6. Check win conditions
@@ -23,7 +25,8 @@ import { escapeHtml } from "../ui.js";
 // così le regole Firebase possono nasconderli agli altri client (vedi database.rules.json).
 const PRIVATE_KEYS = new Set([
   "gameRole", "bugiardoUsato", "boiaUsato", "ammaestratoreUsato",
-  "genioUsato", "angeloUsato", "giustiziereUsato"
+  "genioUsato", "angeloUsato", "giustiziereUsato",
+  "peccatoreUsato", "druidoVitaPersa"
 ]);
 
 export async function processaNotte(gameCode) {
@@ -93,6 +96,19 @@ export async function processaNotte(gameCode) {
 
   // Giustiziere/Cacciatore ignora le protezioni (_nonBloccabile) — già gestito dall'ordine di priorità
 
+  // ── 3.5. Seconda vita Druido ──────────────────────────────────────────────
+  // Gira dopo il salvataggio Puttana e la trasformazione Figlio del Lupo, così
+  // controlla il bersaglio *finale* del morso (dopo eventuali redirect di
+  // Ammaestratore/Peccatore) e non la scelta grezza iniziale dei lupi. Nessun
+  // log dedicato: l'attacco risulterà semplicemente "sopravvive" come un
+  // normale salvataggio, il Druido non viene mai avvertito di aver perso una vita.
+  for (const uid in sl) {
+    if (sl[uid].gameRole === "Druido" && sl[uid].isAlive && sl[uid]._morteNottePending && !sl[uid].druidoVitaPersa) {
+      sl[uid]._morteNottePending = false;
+      sl[uid].druidoVitaPersa = true;
+    }
+  }
+
   // ── 4. Applicazione morti ─────────────────────────────────────────────────
   const mortiNotte = [];
   for (const uid in sl) {
@@ -115,6 +131,7 @@ export async function processaNotte(gameCode) {
     }
     if (e.tipo === "boia_esecuzione")        causaGiaRaccontata.add(e.morto);
     if (e.tipo === "giustiziere_esecuzione")  causaGiaRaccontata.add(e.bersaglio);
+    if (e.tipo === "peccatore_sacrificio")    causaGiaRaccontata.add(e.vittima);
   }
   for (const uid of mortiNotte) {
     if (!causaGiaRaccontata.has(uid)) {
@@ -267,6 +284,9 @@ function buildRiepilogo(mortiUids, giocatori, eventi, vincitore) {
 
   const gio = eventi.find(e => e.tipo === "giustiziere_esecuzione");
   if (gio) righe.push({ testo: `⚔️ Cacciatore ha giustiziato ${nome(gio.bersaglio)}`, tipo: "morte" });
+
+  const pec = eventi.find(e => e.tipo === "peccatore_sacrificio");
+  if (pec) righe.push({ testo: `🩸 ${nome(pec.vittima)} si è sacrificato al posto di ${nome(pec.bersaglioOriginale)}`, tipo: "morte" });
 
   if (vincitore) righe.push({ testo: `🏆 VITTORIA: ${vincitore.toUpperCase()}`, tipo: "trasforma" });
 

@@ -47,6 +47,7 @@ const LOG_TIPO_COLOR = {
   spettro_assegnato:              "#8070b0",
   spettro_boost:                  "#8070b0",
   spettro_no_boost:               "#8070b0",
+  peccatore_sacrificio:           "#c84050",
 };
 
 export function logEntryColor(tipo) {
@@ -70,6 +71,7 @@ export function formatLogEntry(e, giocatori = {}) {
     case "boia_esecuzione":                 return `🪓 Boia dichiara "${e.ruoloDichiarato}" su ${nome(e.bersaglio)}: ${e.indovinato ? "✅ Corretto" : "❌ Sbagliato"} — muore ${nome(e.morto)}`;
     case "angelo_resurrezione":             return `😇 Angelo resuscita ${nome(e.bersaglio)}`;
     case "giustiziere_esecuzione":          return `⚔️ Cacciatore giustizia ${nome(e.bersaglio)}, che muore`;
+    case "peccatore_sacrificio":            return `😈 Peccatore si sacrifica: muore ${nome(e.vittima)} al posto di ${nome(e.bersaglioOriginale)}`;
     case "muto_silenzia":                   return `🤐 ${nome(e.bersaglio)} viene silenziato`;
     case "sciamano_insinuo":                return `🔮 Lupo Sciamano insinua su ${nome(e.bersaglio)}`;
     case "stopper_blocca":                  return `🪄 Stopper blocca ${nome(e.bersaglio)}`;

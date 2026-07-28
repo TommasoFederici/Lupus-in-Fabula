@@ -477,6 +477,43 @@ export const ROLES = {
     effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
   },
 
+  peccatore: {
+    id: "peccatore", nome: "Peccatore",
+    descrizione: "Appare come lupo agli occhi del Veggente. Una volta per partita può sacrificarsi per bloccare il morso dei lupi, sostituendosi al bersaglio.",
+    fazione: "villaggio", fazioneApparente: "lupi",
+    prioritaNotte: 28, attivoNotte: true, attivoGiorno: false, defaultCount: 0,
+    flagUsato: "peccatoreUsato",
+
+    controlliNotte(giocatori) {
+      const me = Object.values(giocatori).find(p => p.gameRole === "Peccatore");
+      if (me?.peccatoreUsato) return [{ tipo: "info", testo: "Potere già usato 🔒" }];
+      return [{
+        tipo: "radio", label: "Sacrificati per bloccare il morso",
+        chiaveAzione: "peccatoreSacrificio",
+        filtroTarget: (p) => p.gameRole === "Peccatore" && p.isAlive,
+        opzionale: true
+      }];
+    },
+
+    processaNotte(azioni, sl, stato) {
+      if (!azioni.peccatoreSacrificio || !azioni.killed) return { aggiornamenti: [], logEventi: [] };
+      const pecUid = Object.keys(sl).find(u => sl[u].gameRole === "Peccatore");
+      if (!pecUid) return { aggiornamenti: [], logEventi: [] };
+      const bersaglioOriginale = azioni.killed;
+      return {
+        aggiornamenti: [
+          { uid: bersaglioOriginale, campi: { _morteNottePending: false } },
+          { uid: pecUid, campi: { _morteNottePending: true, peccatoreUsato: true } }
+        ],
+        logEventi: [{
+          tipo: "peccatore_sacrificio", vittima: pecUid, bersaglioOriginale,
+          notte: stato.nightNumber, timestamp: Date.now()
+        }]
+      };
+    },
+    effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
+  },
+
   prete: {
     id: "prete", nome: "Prete",
     descrizione: "Di giorno indica un giocatore: se è un lupo muore, altrimenti muore il prete.",
@@ -490,6 +527,26 @@ export const ROLES = {
   contadino: {
     id: "contadino", nome: "Contadino",
     descrizione: "Nessun potere speciale.",
+    fazione: "villaggio", fazioneApparente: "villaggio",
+    prioritaNotte: null, attivoNotte: false, attivoGiorno: false, defaultCount: 0,
+    controlliNotte() { return null; },
+    processaNotte() { return { aggiornamenti: [], logEventi: [] }; },
+    effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
+  },
+
+  druido: {
+    id: "druido", nome: "Druido",
+    descrizione: "Un contadino con due vite: la prima volta che i lupi lo mordono sopravvive, senza che nessuno se ne accorga.",
+    fazione: "villaggio", fazioneApparente: "villaggio",
+    prioritaNotte: null, attivoNotte: false, attivoGiorno: false, defaultCount: 0,
+    controlliNotte() { return null; },
+    processaNotte() { return { aggiornamenti: [], logEventi: [] }; },
+    effettoPassivo() { return { aggiornamenti: [], logEventi: [] }; }
+  },
+
+  borgomastro: {
+    id: "borgomastro", nome: "Borgomastro",
+    descrizione: "Una volta per partita può annullare un voto indirizzato a un giocatore a sua scelta durante il rogo. Se dopo averlo usato si va comunque allo spareggio, può agire di nuovo. Potere gestito manualmente dal narratore, nessuna azione di gioco automatica.",
     fazione: "villaggio", fazioneApparente: "villaggio",
     prioritaNotte: null, attivoNotte: false, attivoGiorno: false, defaultCount: 0,
     controlliNotte() { return null; },

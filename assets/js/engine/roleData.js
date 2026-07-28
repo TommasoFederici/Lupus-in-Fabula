@@ -144,6 +144,34 @@ export const ROLE_DATA = {
     abilita: [],
   },
 
+  "Druido": {
+    categoria: "villaggio",
+    fazioneApparente: "Villaggio",
+    emoji: "🌿",
+    icona: "druido",
+    descrizioneLunga: "Un contadino legato agli spiriti della natura, che gli concedono di sopravvivere al primo morso dei lupi.",
+    meccaniche: [
+      "Ha due vite contro l'attacco dei lupi: la prima volta che viene morso sopravvive",
+      "Non viene mai avvertito di aver perso la prima vita — l'attacco risulta semplicemente fallito",
+      "Alla seconda volta che i lupi lo scelgono come bersaglio, muore normalmente",
+    ],
+    abilita: [{ nome: "Doppia Vita", desc: "Sopravvive al primo morso dei lupi, senza saperlo" }],
+  },
+
+  "Borgomastro": {
+    categoria: "villaggio",
+    fazioneApparente: "Villaggio",
+    emoji: "🎩",
+    icona: "borgomastro",
+    descrizioneLunga: "L'autorità civile del villaggio, capace di influenzare l'esito di una votazione con la sua sola parola.",
+    meccaniche: [
+      "Una volta per partita può annullare un voto indirizzato a un giocatore a sua scelta durante il rogo",
+      "Se dopo aver usato il potere si va comunque allo spareggio, può usarlo di nuovo per quel turno",
+      "Potere gestito interamente a voce dal narratore: nessuna azione automatica in app",
+    ],
+    abilita: [{ nome: "Autorità", desc: "Annulla un voto indirizzato a un giocatore durante il rogo" }],
+  },
+
   "Veggente": {
     categoria: "villaggio",
     fazioneApparente: "Villaggio",
@@ -275,6 +303,20 @@ export const ROLE_DATA = {
       "Durante la notte sceglie un giocatore da giustiziare — l'azione è letale e non bloccabile",
     ],
     abilita: [{ nome: "Esecuzione Notturna", desc: "Uccide un giocatore a scelta durante la notte (non bloccabile)" }],
+  },
+
+  "Peccatore": {
+    categoria: "villaggio",
+    fazioneApparente: "Lupi",
+    emoji: "😈",
+    icona: "peccatore",
+    descrizioneLunga: "Un'anima macchiata che gioca per il villaggio, ma il cui peccato la fa apparire come un lupo agli occhi del Veggente.",
+    meccaniche: [
+      "Al controllo del Veggente risulta sempre lupo, anche se gioca per il villaggio",
+      "Una volta per partita può sacrificarsi per bloccare il morso dei lupi, sostituendosi al bersaglio scelto quella notte",
+      "Se i lupi non hanno scelto nessun bersaglio quella notte, il sacrificio non ha effetto e il potere resta disponibile",
+    ],
+    abilita: [{ nome: "Sacrificio", desc: "Si sostituisce al bersaglio dei lupi, bloccando il morso una volta per partita" }],
   },
 
   "Amante": {
