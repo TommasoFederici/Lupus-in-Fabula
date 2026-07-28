@@ -246,7 +246,7 @@ function renderJoinQr(isHost, status) {
   const section = document.getElementById("qr-join-section");
   if (!section) return;
 
-  const visible = isHost && status === "waiting";
+  const visible = isHost && status !== "running";
   section.style.display = visible ? "flex" : "none";
   if (!visible || qrRendered) return;
 
