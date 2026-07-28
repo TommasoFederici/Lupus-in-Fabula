@@ -193,29 +193,6 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
   mask-image: radial-gradient(circle closest-side at 68% 38%, transparent 90%, #000 94%);
 }
 
-.flip-card-front-question {
-  position: relative;
-  z-index: 1;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 6rem;
-  line-height: 1;
-  color: var(--gold);
-  -webkit-text-stroke: 3px var(--bg-deep);
-  text-shadow: 0 0 24px var(--glow-60), 0 0 48px var(--glow-40);
-}
-
-.flip-card-front-label {
-  position: relative;
-  z-index: 1;
-  font-size: 0.82rem;
-  font-family: var(--font-body);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-  margin-top: 0.3rem;
-}
-
 .flip-card-back {
   transform: rotateY(180deg);
   color: var(--text-prim);
@@ -242,6 +219,15 @@ button:active { filter: brightness(0.97); transform: translateY(1px); }
   color: var(--text-sec);
   line-height: 1.55;
   font-weight: 400;
+}
+
+.flip-card-hint {
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  margin: 0.7rem 0 0;
 }
 
 /* ── Player: status banner ──────────────────────────────────────────────────── */

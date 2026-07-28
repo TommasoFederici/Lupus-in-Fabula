@@ -89,6 +89,7 @@ function setupPlayer() {
 
   const roleCard     = document.getElementById("role-card");
   const roleCardBack = document.getElementById("role-card-back");
+  const roleCardHint = document.getElementById("role-card-hint");
   const statusEl     = document.getElementById("player-status");
 
   function showRole() {
@@ -101,9 +102,11 @@ function setupPlayer() {
       <div class="role-reveal-name">${nome}</div>
       ${desc ? `<div class="role-reveal-desc">${desc}</div>` : ""}`;
     roleCard.classList.add("revealed");
+    roleCardHint.textContent = "Tocca per nascondere";
   }
   function hideRole() {
     roleCard.classList.remove("revealed");
+    roleCardHint.textContent = "Tocca per vedere";
   }
 
   roleCard.addEventListener("click", () => {
